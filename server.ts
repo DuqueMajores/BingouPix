@@ -16,6 +16,25 @@ const app = express();
 const server = http.createServer(app);
 const PORT = Number(process.env.PORT || 3000);
 
+const allowedOrigins = new Set(
+  (process.env.FRONTEND_URL || '')
+    .split(',')
+    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .filter(Boolean),
+);
+
+app.use((req: Request, res: Response, next) => {
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.has(origin.replace(/\/$/, ''))) {
+    res.setHeader('Access-Control-Allow-Origin', origin);
+    res.setHeader('Vary', 'Origin');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
 app.use(express.json());
 
 // In-Memory Database & State
@@ -781,7 +800,8 @@ app.post('/api/wallet/pix/deposit', async (req: Request, res: Response) => {
         description: `Recarga BingouPix R$ ${amount.toFixed(2)}`,
         payment_method_id: 'pix',
         external_reference: depositId,
-        date_of_expiration: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        // O Mercado Pago exige validade entre 30 minutos e 30 dias.
+        date_of_expiration: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
         payer: {
           email: String(req.body?.payerEmail || 'jogador@bingoupix.com'),
           first_name: String(req.body?.payerName || 'Jogador').split(' ')[0],
@@ -794,7 +814,8 @@ app.post('/api/wallet/pix/deposit', async (req: Request, res: Response) => {
     }
     deposits.set(depositId, { id: depositId, paymentId: String(data.id), userId: 'user-me', amount: Number(amount.toFixed(2)), credited: false });
     const tx = data.point_of_interaction.transaction_data;
-    return res.json({ id: depositId, amount: Number(amount.toFixed(2)), status: data.status || 'pending', copyPaste: tx.qr_code, qrCode: `data:image/png;base64,${tx.qr_code_base64}`, mercadoPagoId: String(data.id), isSimulated: false, expiresAt: Date.now() + 15 * 60 * 1000 });
+    const qrCode = tx.qr_code_base64 ? `data:image/png;base64,${tx.qr_code_base64}` : '';
+    return res.json({ id: depositId, amount: Number(amount.toFixed(2)), status: data.status || 'pending', copyPaste: tx.qr_code, qrCode, qrCodeBase64: qrCode, mercadoPagoId: String(data.id), isSimulated: false, expiresAt: Date.now() + 30 * 60 * 1000 });
   } catch (error) {
     return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao criar o Pix no Mercado Pago.' });
   }

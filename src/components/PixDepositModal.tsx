@@ -202,7 +202,7 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
               />
               <span className="text-[11px] font-bold text-slate-600 mt-2 flex items-center gap-1">
                 <Clock className="w-3.5 h-3.5 text-amber-600" />
-                Válido por 15 minutos • Valor: R$ {pixData.amount.toFixed(2)}
+                Válido por 30 minutos • Valor: R$ {pixData.amount.toFixed(2)}
               </span>
             </div>
 

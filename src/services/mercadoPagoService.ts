@@ -17,6 +17,12 @@ export interface PayoutResult {
  * O Access Token nunca deve chegar ao navegador, ao localStorage ou ao bundle.
  */
 class MercadoPagoWebService {
+  private readonly apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+
+  private apiUrl(path: string): string {
+    return `${this.apiBaseUrl}${path}`;
+  }
+
   public getMpInstance(): null {
     return null;
   }
@@ -26,7 +32,7 @@ class MercadoPagoWebService {
     payerEmail?: string,
     payerName?: string,
   ): Promise<PixPaymentInfo> {
-    const response = await fetch('/api/wallet/pix/deposit', {
+    const response = await fetch(this.apiUrl('/api/wallet/pix/deposit'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount, payerEmail, payerName }),
@@ -45,7 +51,7 @@ class MercadoPagoWebService {
   ): Promise<{ status: 'approved' | 'pending' | 'rejected' }> {
     if (!paymentId) return { status: 'pending' };
 
-    const response = await fetch(`/api/wallet/pix/status/${encodeURIComponent(paymentId)}`);
+    const response = await fetch(this.apiUrl(`/api/wallet/pix/status/${encodeURIComponent(paymentId)}`));
     const data = await response.json().catch(() => ({}));
     if (!response.ok) return { status: 'pending' };
     return data;
@@ -57,7 +63,7 @@ class MercadoPagoWebService {
     prizeAmount: number,
     roundId: number,
   ): Promise<PayoutResult> {
-    const response = await fetch('/api/wallet/pix/payout', {
+    const response = await fetch(this.apiUrl('/api/wallet/pix/payout'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ winnerName, pixKey, prizeAmount, roundId }),
