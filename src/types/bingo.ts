@@ -35,7 +35,7 @@ export interface WinnerInfo {
   totalPot: number;
   pixKey: PixKey;
   mercadoPagoPaymentId: string;
-  mercadoPagoStatus: 'approved' | 'in_process' | 'simulated';
+  mercadoPagoStatus: 'approved' | 'in_process' | 'failed';
   timestamp: number;
 }
 

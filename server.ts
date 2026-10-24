@@ -1,9 +1,10 @@
 import express, { Request, Response } from 'express';
 import http from 'http';
+import crypto from 'crypto';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import { formatPixEMV, generateSvgQrCode } from './src/utils/pix.ts';
+import { generateSvgQrCode } from './src/utils/pix.ts';
 
 dotenv.config();
 
@@ -12,7 +13,7 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const server = http.createServer(app);
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json());
 
@@ -59,7 +60,7 @@ interface StoredWinner {
     name: string;
   };
   mercadoPagoPaymentId: string;
-  mercadoPagoStatus: 'approved' | 'in_process' | 'simulated';
+  mercadoPagoStatus: 'approved' | 'in_process' | 'failed';
   timestamp: number;
 }
 
@@ -160,6 +161,87 @@ const users: Record<string, StoredUser> = {
     }
   }
 };
+
+interface DepositRecord {
+  id: string;
+  paymentId: string;
+  userId: string;
+  amount: number;
+  credited: boolean;
+}
+
+const deposits = new Map<string, DepositRecord>();
+const payouts = new Map<string, { status: 'approved' | 'in_process' | 'failed'; paymentId: string }>();
+
+function mercadoPagoToken(): string {
+  return (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
+}
+
+function isProductionTokenConfigured(): boolean {
+  return /^APP_USR-/.test(mercadoPagoToken());
+}
+
+async function mercadoPagoRequest(pathname: string, init: RequestInit = {}) {
+  const token = mercadoPagoToken();
+  if (!token) throw new Error('MERCADO_PAGO_ACCESS_TOKEN não configurado no servidor.');
+  const headers = new Headers(init.headers);
+  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Content-Type', 'application/json');
+  return fetch(`https://api.mercadopago.com${pathname}`, { ...init, headers });
+}
+
+async function creditApprovedDeposit(paymentId: string): Promise<{ status: 'approved' | 'pending' | 'rejected'; balance: number }> {
+  const response = await mercadoPagoRequest(`/v1/payments/${encodeURIComponent(paymentId)}`);
+  const payment = await response.json();
+  if (!response.ok) return { status: 'pending', balance: users['user-me']?.balance || 0 };
+
+  let deposit = [...deposits.values()].find((item) => item.paymentId === String(payment.id));
+  // Recupera a referência após um reinício do processo; o pagamento foi criado
+  // com external_reference e o valor é revalidado diretamente na API do MP.
+  if (!deposit && typeof payment.external_reference === 'string' && payment.external_reference.startsWith('DEP-')) {
+    deposit = {
+      id: payment.external_reference,
+      paymentId: String(payment.id),
+      userId: 'user-me',
+      amount: Number(payment.transaction_amount),
+      credited: false,
+    };
+    if (Number.isFinite(deposit.amount) && deposit.amount > 0) deposits.set(deposit.id, deposit);
+  }
+  if (!deposit || !Number.isFinite(deposit.amount) || deposit.amount <= 0) {
+    return { status: 'rejected', balance: users['user-me']?.balance || 0 };
+  }
+
+  if (payment.status === 'approved' && !deposit.credited) {
+    const user = users[deposit.userId];
+    if (user) {
+      user.balance = Number((user.balance + deposit.amount).toFixed(2));
+      deposit.credited = true;
+      addChatMessage({
+        senderId: 'system', senderName: 'Mercado Pago Pix', senderAvatar: '💳',
+        text: `Depósito Pix de R$ ${deposit.amount.toFixed(2)} confirmado. Saldo atualizado.`,
+        isSystem: true, systemType: 'pix'
+      });
+    }
+  }
+
+  const status = payment.status === 'approved' ? 'approved' : payment.status === 'rejected' || payment.status === 'cancelled' ? 'rejected' : 'pending';
+  return { status, balance: users[deposit.userId]?.balance || 0 };
+}
+
+function validateWebhookSignature(req: Request): boolean {
+  const secret = (process.env.MERCADO_PAGO_WEBHOOK_SECRET || '').trim();
+  if (!secret) return false;
+  const signature = req.header('x-signature') || '';
+  const requestId = req.header('x-request-id') || '';
+  const dataId = String(req.query['data.id'] || req.body?.data?.id || '').toLowerCase();
+  const ts = signature.match(/(?:^|,)ts=([^,]+)/)?.[1];
+  const v1 = signature.match(/(?:^|,)v1=([^,]+)/)?.[1];
+  if (!ts || !v1 || !requestId || !dataId) return false;
+  const manifest = `id:${dataId};request-id:${requestId};ts:${ts};`;
+  const expected = crypto.createHmac('sha256', secret).update(manifest).digest('hex');
+  return v1.length === expected.length && crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected));
+}
 
 // Generates a 5x5 card with numbers 1 to 60
 // Col 0: 1-12, Col 1: 13-24, Col 2: 25-36, Col 3: 37-48, Col 4: 49-60
@@ -311,62 +393,46 @@ function checkCardWin(card: StoredCard): { won: boolean; type?: 'row' | 'column'
   return { won: false };
 }
 
-// Automatic Pix Payout via Mercado Pago API
-async function executeMercadoPagoPixPayout(winner: StoredWinner): Promise<{ status: 'approved' | 'simulated'; paymentId: string; details: any }> {
-  const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
-
-  if (mpToken && mpToken.trim() !== '' && mpToken !== 'YOUR_MERCADO_PAGO_ACCESS_TOKEN') {
-    try {
-      // Calling Mercado Pago Payouts / Transfers API
-      // Note: Mercado Pago supports payments / payouts via their disbursements or payment API
-      const payoutRes = await fetch('https://api.mercadopago.com/v1/payments', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${mpToken.trim()}`,
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': `payout-${winner.cardId}-${Date.now()}`
-        },
-        body: JSON.stringify({
-          transaction_amount: Number(winner.prizeAmount.toFixed(2)),
-          description: `Prêmio PixBingo Rodada #${roundCounter} - ${winner.patternName}`,
-          payment_method_id: 'pix',
-          payer: {
-            email: winner.pixKey.type === 'email' ? winner.pixKey.key : 'ganhador.bingo@pixbingo.com',
-            first_name: winner.userName.split(' ')[0] || 'Vencedor',
-            identification: {
-              type: winner.pixKey.type === 'cpf' ? 'CPF' : 'OTHER',
-              number: winner.pixKey.type === 'cpf' ? winner.pixKey.key.replace(/\D/g, '') : '00000000000'
-            }
-          }
-        })
-      });
-
-      if (payoutRes.ok) {
-        const data = await payoutRes.json();
-        return {
-          status: 'approved',
-          paymentId: String(data.id || `MP-${Date.now()}`),
-          details: data
-        };
-      }
-    } catch (err) {
-      console.error('Mercado Pago API payout error:', err);
-    }
+// Automatic Pix payout through Mercado Pago Payouts API.
+// The documented API accepts a Mercado Pago account email or bank account data.
+// We do not invent a payment ID when the API rejects the operation.
+async function executeMercadoPagoPixPayout(winner: StoredWinner): Promise<{ status: 'approved' | 'in_process' | 'failed'; paymentId: string; details?: any; error?: string }> {
+  if (winner.pixKey.type !== 'email') {
+    return { status: 'failed', paymentId: '', error: 'Para repasse automático via Mercado Pago, cadastre uma chave Pix do tipo e-mail vinculada à conta Mercado Pago do vencedor.' };
   }
+  const externalReference = `round-${roundCounter}-card-${winner.cardId}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 50);
+  const existing = payouts.get(externalReference);
+  if (existing) return existing;
 
-  // Simulation mode (when user has not configured their live Mercado Pago token)
-  const simPaymentId = `MP-PIX-TRANSFER-${Date.now().toString(36).toUpperCase()}-${Math.floor(1000 + Math.random() * 9000)}`;
-  return {
-    status: 'simulated',
-    paymentId: simPaymentId,
-    details: {
-      type: 'pix_instant_transfer',
-      destination_pix_key: winner.pixKey.key,
-      key_type: winner.pixKey.type,
-      recipient_name: winner.pixKey.name || winner.userName,
-      gateway: 'Mercado Pago Pix Payout Engine v1'
+  try {
+    const response = await mercadoPagoRequest('/v1/payouts', {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': externalReference },
+      body: JSON.stringify({
+        external_reference: externalReference,
+        description: `Premio BingouPix rodada ${roundCounter}`,
+        transactions: [{
+          external_reference: externalReference,
+          type: 'account',
+          account: { email: winner.pixKey.key },
+          amount: { currency: 'BRL', value: Number(winner.prizeAmount.toFixed(2)) },
+          description: `Premio BingouPix para ${winner.userName}`,
+        }],
+      }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const result = { status: 'failed' as const, paymentId: '', error: data.message || data.error || `Mercado Pago recusou o payout (${response.status}).` };
+      payouts.set(externalReference, result);
+      return result;
     }
-  };
+    const status: 'approved' | 'in_process' = data.status === 'approved' ? 'approved' : 'in_process';
+    const result = { status, paymentId: String(data.id || data.transactions?.[0]?.id || ''), details: data };
+    payouts.set(externalReference, result);
+    return result;
+  } catch (error) {
+    return { status: 'failed', paymentId: '', error: error instanceof Error ? error.message : 'Falha ao chamar o Mercado Pago.' };
+  }
 }
 
 // Broadcast chat message
@@ -517,12 +583,6 @@ setInterval(async () => {
           roundStatus = 'finished';
           waitingSecondsRemaining = 10; // Display winner screen for 10s
 
-          // Credit balance if it was the user
-          if (card.isUser) {
-            const u = users['user-me'];
-            if (u) u.balance = Number((u.balance + prizeAmount).toFixed(2));
-          }
-
           // Trigger Pix Transfer via Mercado Pago
           executeMercadoPagoPixPayout(winnerObj).then(payoutResult => {
             if (currentWinner) {
@@ -536,7 +596,9 @@ setInterval(async () => {
               senderId: 'system',
               senderName: 'Mercado Pago Pix',
               senderAvatar: '💸',
-              text: `Prêmio de R$ ${prizeAmount.toFixed(2)} repassado via Pix para ${winnerObj.userName} (${winnerObj.pixKey.key})! ID Mercado Pago: ${payoutResult.paymentId}`,
+              text: payoutResult.status === 'failed'
+                ? `Prêmio de R$ ${prizeAmount.toFixed(2)} aguardando repasse: ${payoutResult.error || 'Mercado Pago não confirmou a transferência.'}`
+                : `Prêmio de R$ ${prizeAmount.toFixed(2)} enviado ao Mercado Pago para repasse via Pix a ${winnerObj.userName}. ID: ${payoutResult.paymentId}`,
               isSystem: true,
               systemType: 'pix'
             });
@@ -702,99 +764,66 @@ app.post('/api/chat/send', (req: Request, res: Response) => {
   res.json({ success: true, message: msg });
 });
 
-// Mercado Pago Pix Deposit Generator
+// Mercado Pago Pix deposit generator. Production always uses the server-side token.
 app.post('/api/wallet/pix/deposit', async (req: Request, res: Response) => {
-  const { amount = 10 } = req.body;
-  const depositAmount = Math.max(1, Number(amount));
-  const mpToken = process.env.MERCADO_PAGO_ACCESS_TOKEN;
+  const amount = Number(req.body?.amount);
+  if (!Number.isFinite(amount) || amount < 1 || amount > 10000) return res.status(400).json({ error: 'Valor inválido. Informe um valor entre R$ 1,00 e R$ 10.000,00.' });
+  if (!isProductionTokenConfigured()) return res.status(503).json({ error: 'Mercado Pago não está configurado com credencial de produção no servidor.' });
 
-  const depositId = `DEP-${Date.now()}`;
-  let copyPaste = '';
-  let qrCodeSvg = '';
-  let mercadoPagoId = '';
-  let isSimulated = true;
-
-  if (mpToken && mpToken.trim() !== '' && mpToken !== 'YOUR_MERCADO_PAGO_ACCESS_TOKEN') {
-    try {
-      const mpRes = await fetch('https://api.mercadopago.com/v1/payments', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${mpToken.trim()}`,
-          'Content-Type': 'application/json',
-          'X-Idempotency-Key': `dep-${depositId}`
+  const depositId = `DEP-${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  try {
+    const mpRes = await mercadoPagoRequest('/v1/payments', {
+      method: 'POST',
+      headers: { 'X-Idempotency-Key': depositId },
+      body: JSON.stringify({
+        transaction_amount: Number(amount.toFixed(2)),
+        description: `Recarga BingouPix R$ ${amount.toFixed(2)}`,
+        payment_method_id: 'pix',
+        external_reference: depositId,
+        date_of_expiration: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        payer: {
+          email: String(req.body?.payerEmail || 'jogador@bingoupix.com'),
+          first_name: String(req.body?.payerName || 'Jogador').split(' ')[0],
         },
-        body: JSON.stringify({
-          transaction_amount: Number(depositAmount.toFixed(2)),
-          description: `Depósito PixBingo R$ ${depositAmount.toFixed(2)}`,
-          payment_method_id: 'pix',
-          payer: {
-            email: 'cliente@pixbingo.com',
-            first_name: 'Jogador',
-            last_name: 'Bingo'
-          }
-        })
-      });
-
-      if (mpRes.ok) {
-        const mpData = await mpRes.json();
-        mercadoPagoId = String(mpData.id);
-        const pointOfInteraction = mpData.point_of_interaction?.transaction_data;
-        if (pointOfInteraction?.qr_code) {
-          copyPaste = pointOfInteraction.qr_code;
-          qrCodeSvg = pointOfInteraction.qr_code_base64
-            ? `data:image/png;base64,${pointOfInteraction.qr_code_base64}`
-            : generateSvgQrCode(copyPaste);
-          isSimulated = false;
-        }
-      }
-    } catch (e) {
-      console.error('Mercado Pago API error generating pix deposit:', e);
+      }),
+    });
+    const data = await mpRes.json().catch(() => ({}));
+    if (!mpRes.ok || !data.id || !data.point_of_interaction?.transaction_data?.qr_code) {
+      return res.status(502).json({ error: data.message || 'Mercado Pago não criou o Pix.' });
     }
+    deposits.set(depositId, { id: depositId, paymentId: String(data.id), userId: 'user-me', amount: Number(amount.toFixed(2)), credited: false });
+    const tx = data.point_of_interaction.transaction_data;
+    return res.json({ id: depositId, amount: Number(amount.toFixed(2)), status: data.status || 'pending', copyPaste: tx.qr_code, qrCode: `data:image/png;base64,${tx.qr_code_base64}`, mercadoPagoId: String(data.id), isSimulated: false, expiresAt: Date.now() + 15 * 60 * 1000 });
+  } catch (error) {
+    return res.status(502).json({ error: error instanceof Error ? error.message : 'Falha ao criar o Pix no Mercado Pago.' });
   }
-
-  // Fallback / Sandbox authentic EMV code
-  if (!copyPaste) {
-    const dummyKey = 'pagamentos@pixbingo.online';
-    copyPaste = formatPixEMV(dummyKey, 'PIXBINGO MERCADO PAGO', 'SAO PAULO', depositAmount, depositId);
-    qrCodeSvg = generateSvgQrCode(copyPaste);
-    mercadoPagoId = `MP-SIM-${Date.now()}`;
-  }
-
-  res.json({
-    id: depositId,
-    amount: depositAmount,
-    status: 'pending',
-    copyPaste,
-    qrCode: qrCodeSvg,
-    mercadoPagoId,
-    isSimulated,
-    expiresAt: Date.now() + 15 * 60 * 1000
-  });
 });
 
-// Confirm/Simulate Pix Deposit (adds funds to user balance)
-app.post('/api/wallet/pix/verify', (req: Request, res: Response) => {
-  const { amount } = req.body;
-  const depositAmount = Number(amount);
-  const user = users['user-me'];
-  if (user && depositAmount > 0) {
-    user.balance = Number((user.balance + depositAmount).toFixed(2));
+app.get('/api/wallet/pix/status/:paymentId', async (req: Request, res: Response) => {
+  try {
+    const result = await creditApprovedDeposit(String(req.params.paymentId));
+    return res.json({ status: result.status, balance: result.balance });
+  } catch {
+    return res.status(502).json({ status: 'pending' });
   }
+});
 
-  addChatMessage({
-    senderId: 'system',
-    senderName: 'Mercado Pago Pix',
-    senderAvatar: '💳',
-    text: `Depósito Pix de R$ ${depositAmount.toFixed(2)} confirmado com sucesso! Saldo atualizado.`,
-    isSystem: true,
-    systemType: 'pix'
-  });
+// Mercado Pago webhook. Configure this HTTPS URL in the Mercado Pago dashboard.
+app.post('/api/webhooks/mercado-pago', async (req: Request, res: Response) => {
+  if (!validateWebhookSignature(req)) return res.status(401).json({ error: 'Assinatura inválida.' });
+  const paymentId = String(req.body?.data?.id || req.query['data.id'] || '');
+  if (req.body?.type === 'payment' && paymentId) {
+    try { await creditApprovedDeposit(paymentId); } catch { /* MP retries if processing fails */ }
+  }
+  return res.sendStatus(200);
+});
 
-  res.json({
-    success: true,
-    newBalance: user?.balance || 0,
-    message: 'Pagamento Pix aprovado com sucesso!'
-  });
+app.post('/api/wallet/pix/payout', async (req: Request, res: Response) => {
+  const { winnerName, pixKey, prizeAmount, roundId } = req.body || {};
+  if (!winnerName || !pixKey?.key || !Number.isFinite(Number(prizeAmount)) || Number(prizeAmount) <= 0) return res.status(400).json({ error: 'Dados do prêmio incompletos.' });
+  const result = await executeMercadoPagoPixPayout({ userId: 'user-me', userName: String(winnerName), isUser: true, cardId: `api-${roundId}`, patternType: 'full', patternName: 'Prêmio BingouPix', prizeAmount: Number(prizeAmount), totalPot: Number(prizeAmount), pixKey, mercadoPagoPaymentId: '', mercadoPagoStatus: 'in_process', timestamp: Date.now() });
+  if (result.status === 'failed') return res.status(502).json(result);
+  return res.json({ paymentId: result.paymentId, status: result.status, timestamp: Date.now(), transactionHash: result.paymentId });
 });
 
 // System info / Mercado Pago status

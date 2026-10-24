@@ -89,7 +89,7 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
         <div className="mb-4 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 flex items-start gap-2.5 text-xs text-amber-200">
           <Shield className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
           <span>
-            Ao completar uma linha ou cartela cheia, nosso sistema transfere o prêmio instantaneamente para esta chave Pix.
+            Para o repasse automático pelo Mercado Pago, use um e-mail vinculado à conta Mercado Pago do vencedor. O prêmio só será marcado como pago após a confirmação da API.
           </span>
         </div>
 

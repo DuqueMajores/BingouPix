@@ -432,12 +432,6 @@ class BingoWebService {
               // Broadcast winner to other devices
               multiplayerSync.broadcast('WINNER', { winner: winnerObj });
 
-              // Credit user balance if user won
-              if (card.isUser) {
-                this.user.balance = Number((this.user.balance + prizeAmount).toFixed(2));
-                this.saveUser();
-              }
-
               // Execute Mercado Pago Pix payout
               mercadoPagoService
                 .executePixPrizePayout(card.userName, winnerObj.pixKey, prizeAmount, this.round.id)
@@ -458,7 +452,9 @@ class BingoWebService {
                     senderId: 'system',
                     senderName: 'Mercado Pago Pix',
                     senderAvatar: '💸',
-                    text: `Prêmio de R$ ${prizeAmount.toFixed(2)} transferido via Pix para ${winnerObj.userName}!`,
+                    text: payout.status === 'failed'
+                      ? `Prêmio de R$ ${prizeAmount.toFixed(2)} aguardando repasse: ${payout.error || 'Mercado Pago não confirmou a transferência.'}`
+                      : `Prêmio de R$ ${prizeAmount.toFixed(2)} enviado ao Mercado Pago para repasse via Pix a ${winnerObj.userName}.`,
                     isSystem: true,
                     systemType: 'pix',
                   });
