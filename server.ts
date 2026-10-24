@@ -37,6 +37,14 @@ app.use((req: Request, res: Response, next) => {
 
 app.use(express.json());
 
+app.get('/health', (_req: Request, res: Response) => {
+  res.json({ ok: true, service: 'bingoupix-backend' });
+});
+
+app.get('/api/health', (_req: Request, res: Response) => {
+  res.json({ ok: true, service: 'bingoupix-backend' });
+});
+
 // In-Memory Database & State
 interface StoredUser {
   id: string;
