@@ -20,6 +20,9 @@ class MercadoPagoWebService {
   private readonly apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
   private apiUrl(path: string): string {
+    if (!this.apiBaseUrl && typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
+      throw new Error('Backend Render não configurado no build do frontend. Defina RENDER_BACKEND_URL no GitHub Actions e publique novamente.');
+    }
     return `${this.apiBaseUrl}${path}`;
   }
 
