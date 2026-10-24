@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { LayoutGrid, ChevronRight, Hash, Eye, Sparkles } from 'lucide-react';
+import { LayoutGrid, Hash } from 'lucide-react';
 
 interface BallQueueProps {
   currentNumber: number | null;
@@ -7,52 +7,52 @@ interface BallQueueProps {
   roundStatus: string;
 }
 
-// Color schemes matching column ranges 1-12, 13-24, 25-36, 37-48, 49-60
+// 3D Spherical Radial Gradients for round bingo balls
 export function getBallColor(num: number): {
-  bg: string;
-  border: string;
-  text: string;
+  radialStyle: string;
+  borderColor: string;
+  textColor: string;
   glow: string;
   letter: string;
 } {
   if (num <= 12) {
     return {
-      bg: 'from-rose-600 via-rose-500 to-red-400',
-      border: 'border-rose-400',
-      text: 'text-white',
-      glow: 'shadow-[0_0_20px_rgba(244,63,94,0.6)]',
+      radialStyle: 'radial-gradient(circle at 35% 30%, #fb7185 0%, #f43f5e 40%, #be123c 85%, #881337 100%)',
+      borderColor: 'border-rose-400/80',
+      textColor: 'text-white font-black',
+      glow: 'shadow-[0_0_24px_rgba(244,63,94,0.65)]',
       letter: 'B',
     };
   } else if (num <= 24) {
     return {
-      bg: 'from-amber-600 via-amber-500 to-yellow-300',
-      border: 'border-amber-300',
-      text: 'text-slate-950 font-black',
-      glow: 'shadow-[0_0_20px_rgba(245,158,11,0.6)]',
+      radialStyle: 'radial-gradient(circle at 35% 30%, #fef08a 0%, #f59e0b 45%, #d97706 85%, #78350f 100%)',
+      borderColor: 'border-amber-300',
+      textColor: 'text-slate-950 font-black',
+      glow: 'shadow-[0_0_24px_rgba(245,158,11,0.65)]',
       letter: 'I',
     };
   } else if (num <= 36) {
     return {
-      bg: 'from-emerald-600 via-emerald-500 to-teal-300',
-      border: 'border-emerald-300',
-      text: 'text-slate-950 font-black',
-      glow: 'shadow-[0_0_20px_rgba(16,185,129,0.6)]',
+      radialStyle: 'radial-gradient(circle at 35% 30%, #6ee7b7 0%, #10b981 45%, #047857 85%, #064e3b 100%)',
+      borderColor: 'border-emerald-300',
+      textColor: 'text-slate-950 font-black',
+      glow: 'shadow-[0_0_24px_rgba(16,185,129,0.65)]',
       letter: 'N',
     };
   } else if (num <= 48) {
     return {
-      bg: 'from-sky-600 via-cyan-500 to-blue-400',
-      border: 'border-cyan-300',
-      text: 'text-white',
-      glow: 'shadow-[0_0_20px_rgba(6,182,212,0.6)]',
+      radialStyle: 'radial-gradient(circle at 35% 30%, #67e8f9 0%, #06b6d4 45%, #0369a1 85%, #0c4a6e 100%)',
+      borderColor: 'border-cyan-300',
+      textColor: 'text-white font-black',
+      glow: 'shadow-[0_0_24px_rgba(6,182,212,0.65)]',
       letter: 'G',
     };
   } else {
     return {
-      bg: 'from-purple-600 via-fuchsia-500 to-pink-400',
-      border: 'border-purple-300',
-      text: 'text-white',
-      glow: 'shadow-[0_0_20px_rgba(168,85,247,0.6)]',
+      radialStyle: 'radial-gradient(circle at 35% 30%, #f0abfc 0%, #a855f7 45%, #7e22ce 85%, #581c87 100%)',
+      borderColor: 'border-purple-300',
+      textColor: 'text-white font-black',
+      glow: 'shadow-[0_0_24px_rgba(168,85,247,0.65)]',
       letter: 'O',
     };
   }
@@ -74,7 +74,7 @@ export const BallQueue: React.FC<BallQueueProps> = ({
         <div className="flex items-center gap-2">
           <span className="flex h-2.5 w-2.5 rounded-full bg-cyan-400 animate-pulse" />
           <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-slate-300">
-            Fila de Bolas Sorteadas (1 a 60)
+            Fila de Bolas Sorteadas
           </h3>
           <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-800 text-slate-400">
             {drawnNumbers.length} / 60
@@ -86,36 +86,38 @@ export const BallQueue: React.FC<BallQueueProps> = ({
           className="flex items-center gap-1.5 text-xs font-semibold px-2.5 py-1 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700/60 transition-colors cursor-pointer"
         >
           <LayoutGrid className="w-3.5 h-3.5 text-cyan-400" />
-          <span>{showFullBoard ? 'Ocultar Globo 1-60' : 'Ver Todas as 60 Bolas'}</span>
+          <span>{showFullBoard ? 'Ocultar Tabela de Bolas' : 'Ver Tabela Completa de Bolas'}</span>
         </button>
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4 overflow-hidden">
-        {/* Large Glowing Latest Ball */}
+        {/* Large Spherical Latest Ball */}
         <div className="flex-shrink-0 flex flex-col items-center">
           {currentNumber !== null ? (
             <div className="relative group">
               {/* Outer pulsing ring */}
-              <div className="absolute -inset-1 rounded-full bg-gradient-to-r from-amber-400 via-emerald-400 to-cyan-400 opacity-70 blur-sm animate-pulse" />
+              <div className="absolute -inset-1.5 rounded-full bg-gradient-to-r from-amber-400 via-emerald-400 to-cyan-400 opacity-60 blur-md animate-pulse" />
 
-              {/* Ball sphere */}
+              {/* Spherical ball with circular radial highlight */}
               <div
-                className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gradient-to-br ${
-                  getBallColor(currentNumber).bg
-                } ${getBallColor(currentNumber).glow} border-2 ${
-                  getBallColor(currentNumber).border
-                } flex flex-col items-center justify-center shadow-2xl transition-transform transform scale-100 hover:scale-105`}
+                style={{ background: getBallColor(currentNumber).radialStyle }}
+                className={`relative w-14 h-14 sm:w-16 sm:h-16 rounded-full ${
+                  getBallColor(currentNumber).glow
+                } border-2 ${
+                  getBallColor(currentNumber).borderColor
+                } flex flex-col items-center justify-center shadow-2xl transition-transform transform scale-100 hover:scale-105 overflow-hidden`}
               >
-                {/* 3D sphere highlight */}
-                <div className="absolute top-1 left-2 w-4 h-2.5 rounded-full bg-white/40 blur-[1px] transform -rotate-45" />
+                {/* Circular specular reflection for round look */}
+                <div className="absolute top-1.5 left-2.5 w-3.5 h-3.5 rounded-full bg-white/60 blur-[0.6px] pointer-events-none" />
+                <div className="absolute top-1 left-2 w-5 h-5 rounded-full bg-white/25 pointer-events-none" />
 
-                <span className="text-[10px] uppercase font-black tracking-widest text-white/80 font-['Outfit'] -mb-1">
+                <span className="text-[10px] uppercase font-black tracking-widest text-white/90 font-['Outfit'] -mb-0.5 drop-shadow">
                   {getBallColor(currentNumber).letter}
                 </span>
                 <span
                   className={`text-xl sm:text-2xl font-black font-['Outfit'] ${
-                    getBallColor(currentNumber).text
-                  } tabular-nums leading-none`}
+                    getBallColor(currentNumber).textColor
+                  } tabular-nums leading-none drop-shadow-md`}
                 >
                   {currentNumber}
                 </span>
@@ -142,14 +144,17 @@ export const BallQueue: React.FC<BallQueueProps> = ({
                 return (
                   <div
                     key={`${num}-${idx}`}
-                    className={`relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-br ${
-                      color.bg
-                    } border ${color.border} shadow-md transition-all ${
-                      isLatest ? 'ring-2 ring-white/60 scale-105' : 'opacity-85'
+                    style={{ background: color.radialStyle }}
+                    className={`relative flex items-center justify-center w-8 h-8 sm:w-9 sm:h-9 rounded-full border ${
+                      color.borderColor
+                    } shadow-md transition-all overflow-hidden ${
+                      isLatest ? 'ring-2 ring-white/90 scale-105' : 'opacity-90'
                     }`}
                   >
+                    {/* Circular highlight */}
+                    <div className="absolute top-1 left-1.5 w-2 h-2 rounded-full bg-white/50 blur-[0.4px] pointer-events-none" />
                     <span
-                      className={`text-xs sm:text-sm font-black font-['Outfit'] ${color.text} tabular-nums`}
+                      className={`text-xs sm:text-sm font-black font-['Outfit'] ${color.textColor} tabular-nums drop-shadow-sm`}
                     >
                       {num}
                     </span>
@@ -161,7 +166,7 @@ export const BallQueue: React.FC<BallQueueProps> = ({
             <div className="h-14 flex items-center text-xs text-slate-500 italic">
               {roundStatus === 'waiting'
                 ? 'Os números sorteados aparecerão enfileirados aqui a cada 10 segundos.'
-                : 'Iniciando o sorteio das bolas de 1 a 60...'}
+                : 'Iniciando o sorteio das bolas...'}
             </div>
           )}
         </div>
@@ -171,7 +176,7 @@ export const BallQueue: React.FC<BallQueueProps> = ({
       {showFullBoard && (
         <div className="mt-4 pt-3 border-t border-slate-800">
           <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
-            <span>Tabela Completa de Bolas (1 a 60)</span>
+            <span>Tabela Completa de Bolas</span>
             <span className="text-emerald-400 font-semibold">
               Marcadas: {drawnNumbers.length} / 60
             </span>
@@ -186,9 +191,10 @@ export const BallQueue: React.FC<BallQueueProps> = ({
               return (
                 <div
                   key={n}
-                  className={`flex items-center justify-center h-7 text-xs font-bold rounded-lg transition-all ${
+                  style={isCurrent ? { background: color.radialStyle } : undefined}
+                  className={`flex items-center justify-center h-7 text-xs font-bold rounded-full transition-all ${
                     isCurrent
-                      ? `bg-gradient-to-br ${color.bg} text-white ring-2 ring-white scale-110 shadow-lg z-10`
+                      ? `text-white ring-2 ring-white scale-110 shadow-lg z-10 font-black`
                       : isDrawn
                       ? 'bg-slate-700 text-emerald-300 border border-emerald-500/40 line-through opacity-80'
                       : 'bg-slate-950/60 text-slate-400 border border-slate-800'

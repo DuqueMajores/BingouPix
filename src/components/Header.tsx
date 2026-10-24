@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, Smartphone, Monitor, Wallet, Plus, Key, Users, Info } from 'lucide-react';
+import { Volume2, VolumeX, Smartphone, Monitor, Plus, Key, Users, BookOpen } from 'lucide-react';
 import { soundManager } from '../utils/audio.ts';
 import { PixKey } from '../types/bingo.ts';
 
@@ -33,7 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 px-3 py-2.5 sm:px-6 sm:py-3 transition-all">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-2">
-        {/* Logo / Brand */}
+        {/* Logo / Brand: BingouPix */}
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative flex items-center justify-center w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-amber-500 via-emerald-500 to-cyan-400 p-[2px] shadow-lg shadow-emerald-500/20">
             <div className="w-full h-full bg-slate-950 rounded-[10px] flex items-center justify-center">
@@ -50,7 +50,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div>
             <div className="flex items-center gap-1.5">
               <h1 className="font-black text-lg sm:text-xl tracking-tight text-white font-['Outfit']">
-                Pix<span className="text-emerald-400">Bingo</span>
+                Bingou<span className="text-emerald-400">Pix</span>
               </h1>
               <span className="text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.5 rounded">
                 Ao Vivo
@@ -59,10 +59,9 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="flex items-center gap-2 text-xs text-slate-400">
               <span className="flex items-center gap-1">
                 <Users className="w-3 h-3 text-cyan-400" />
-                <span className="font-medium text-slate-300">{activePlayers}</span> jogando
+                <span className="font-bold text-slate-200">{activePlayers}</span>{' '}
+                {activePlayers === 1 ? 'jogador com cartela' : 'jogadores com cartela'}
               </span>
-              <span>•</span>
-              <span className="text-amber-400/90 font-medium">Cartela R$ 1,00</span>
             </div>
           </div>
         </div>
@@ -82,7 +81,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <button
               onClick={onOpenDeposit}
-              title="Depositar via Pix Mercado Pago"
+              title="Depositar via Pix"
               className="flex items-center gap-1 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 active:scale-95 text-slate-950 text-xs font-bold px-2.5 py-1.5 rounded-lg shadow-md shadow-emerald-500/20 transition-all cursor-pointer"
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -118,7 +117,7 @@ export const Header: React.FC<HeaderProps> = ({
             {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
           </button>
 
-          {/* Device Frame View Toggle (Simulating Expo Mobile App vs Desktop) */}
+          {/* Device Frame View Toggle */}
           <button
             onClick={onToggleMobileFrame}
             title={isMobileFrame ? 'Expandir para Visão Completa (Desktop)' : 'Modo App Celular (Expo Preview)'}
@@ -131,13 +130,14 @@ export const Header: React.FC<HeaderProps> = ({
             )}
           </button>
 
-          {/* Mercado Pago API Status / Rules Modal */}
+          {/* Regras do Jogo Button */}
           <button
             onClick={onOpenInfo}
-            title="Mercado Pago & Regras do Jogo"
-            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700/60 transition-colors cursor-pointer"
+            title="Regras do Jogo"
+            className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700/80 text-slate-300 hover:text-white border border-slate-700/60 transition-colors cursor-pointer flex items-center gap-1.5"
           >
-            <Info className="w-4 h-4 text-slate-400" />
+            <BookOpen className="w-4 h-4 text-amber-400" />
+            <span className="hidden lg:inline text-xs font-semibold">Regras</span>
           </button>
         </div>
       </div>

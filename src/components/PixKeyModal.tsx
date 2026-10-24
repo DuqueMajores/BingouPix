@@ -18,7 +18,7 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
 }) => {
   const [type, setType] = useState<PixKeyType>(currentPixKey?.type || 'cpf');
   const [key, setKey] = useState(currentPixKey?.key || '');
-  const [name, setName] = useState(currentPixKey?.name || 'Jogador PixBingo');
+  const [name, setName] = useState(currentPixKey?.name || 'Jogador BingouPix');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -80,7 +80,7 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
               Cadastrar Chave Pix
             </h3>
             <p className="text-xs text-slate-400">
-              Obrigatória para o repasse automático de 80% do prêmio via Mercado Pago.
+              Obrigatória para o repasse automático do prêmio via Pix ao vencedor.
             </p>
           </div>
         </div>

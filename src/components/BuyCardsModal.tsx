@@ -65,9 +65,6 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
             <h3 className="text-lg font-black font-['Outfit'] text-white">
               Comprar Cartelas de Bingo
             </h3>
-            <p className="text-xs text-slate-400">
-              Cada cartela custa <strong className="text-amber-400">R$ 1,00</strong>. Débito automático.
-            </p>
           </div>
         </div>
 
@@ -172,7 +169,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
         <div className="flex items-center gap-2 text-[11px] text-slate-400 mb-5 bg-slate-950/40 p-2.5 rounded-lg border border-slate-800/80">
           <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
           <span>
-            80% de toda a arrecadação da rodada é transferida automaticamente ao vencedor via Pix Mercado Pago!
+            Cada cartela custa apenas R$ 1,00. O prêmio é transferido altomaticamente via Pix do vencedor.
           </span>
         </div>
 

@@ -128,6 +128,43 @@ class MercadoPagoWebService {
   }
 
   /**
+   * Check status of Mercado Pago Pix Payment
+   * Returns 'approved' only when confirmed by bank/gateway
+   */
+  public async checkPaymentStatus(
+    paymentId: string,
+    isSimulated = false
+  ): Promise<{ status: 'approved' | 'pending' | 'rejected' }> {
+    const token = this.config.accessToken;
+
+    if (!isSimulated && token && paymentId && !paymentId.startsWith('MP-SIM') && !paymentId.startsWith('DEP-')) {
+      try {
+        const res = await fetch(`https://api.mercadopago.com/v1/payments/${paymentId}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.status === 'approved') {
+            return { status: 'approved' };
+          }
+          if (data.status === 'rejected' || data.status === 'cancelled') {
+            return { status: 'rejected' };
+          }
+        }
+      } catch (err) {
+        console.warn('Error querying Mercado Pago payment status:', err);
+      }
+    }
+
+    return { status: 'pending' };
+  }
+
+  /**
    * Automatic Pix Prize Payout of 80% to Winner
    */
   public async executePixPrizePayout(

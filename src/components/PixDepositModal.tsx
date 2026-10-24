@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { X, QrCode, Copy, Check, Clock, ShieldCheck, Zap, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { X, QrCode, Copy, Check, Clock, ShieldCheck, RefreshCw, AlertCircle, Loader2 } from 'lucide-react';
 import { PixPaymentInfo } from '../types/bingo.ts';
 import { mercadoPagoService } from '../services/mercadoPagoService.ts';
 import { bingoWebService } from '../services/bingoWebService.ts';
@@ -20,9 +20,12 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [isApproved, setIsApproved] = useState(false);
+  const [statusNote, setStatusNote] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
 
-  if (!isOpen) return null;
+  const isApprovedRef = useRef(false);
+  isApprovedRef.current = isApproved;
 
   const quickAmounts = [5, 10, 20, 50, 100];
 
@@ -30,6 +33,8 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
     setSelectedAmount(amount);
     setLoading(true);
     setSuccessMessage('');
+    setStatusNote('');
+    setIsApproved(false);
     try {
       const data = await mercadoPagoService.createPixDeposit(amount);
       setPixData(data);
@@ -47,22 +52,67 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
     setTimeout(() => setCopied(false), 2500);
   };
 
-  const handleSimulatePayment = () => {
-    if (!pixData) return;
-    setVerifying(true);
+  // Process confirmed payment and update balance
+  const confirmAndCreditDeposit = useCallback((amount: number) => {
+    if (isApprovedRef.current) return;
+    setIsApproved(true);
+    isApprovedRef.current = true;
+    bingoWebService.addDeposit(amount);
+    setSuccessMessage(`Pagamento de R$ ${amount.toFixed(2)} confirmado! Saldo atualizado.`);
+    const user = bingoWebService.getUser();
+    onDepositSuccess(user.balance);
+
     setTimeout(() => {
-      bingoWebService.addDeposit(pixData.amount);
-      setSuccessMessage(`Depósito de R$ ${pixData.amount.toFixed(2)} aprovado no Mercado Pago!`);
-      const user = bingoWebService.getUser();
-      onDepositSuccess(user.balance);
-      setVerifying(false);
-      setTimeout(() => {
-        onClose();
-        setPixData(null);
-        setSuccessMessage('');
-      }, 1500);
-    }, 600);
-  };
+      onClose();
+      setPixData(null);
+      setSuccessMessage('');
+      setIsApproved(false);
+      setStatusNote('');
+    }, 2200);
+  }, [onClose, onDepositSuccess]);
+
+  // Query payment status with Mercado Pago
+  const verifyPayment = useCallback(async (isManual = false) => {
+    if (!pixData || isApprovedRef.current) return;
+    if (isManual) setVerifying(true);
+
+    try {
+      const res = await mercadoPagoService.checkPaymentStatus(
+        pixData.mercadoPagoId || '',
+        pixData.isSimulated
+      );
+
+      if (res.status === 'approved') {
+        confirmAndCreditDeposit(pixData.amount);
+      } else if (isManual) {
+        setStatusNote('Pagamento ainda pendente de confirmação bancária. O saldo só é atualizado quando houver a confirmação do pagamento.');
+      }
+    } catch (err) {
+      if (isManual) {
+        setStatusNote('Aguardando confirmação bancária. O saldo só é atualizado quando houver a confirmação do pagamento.');
+      }
+      console.warn(err);
+    } finally {
+      if (isManual) {
+        setTimeout(() => setVerifying(false), 500);
+      }
+    }
+  }, [pixData, confirmAndCreditDeposit]);
+
+  // Automatic status polling every 3 seconds while waiting for confirmation
+  useEffect(() => {
+    if (!isOpen || !pixData || isApproved) return;
+
+    const interval = setInterval(() => {
+      if (!isApprovedRef.current) {
+        verifyPayment(false);
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [isOpen, pixData, isApproved, verifyPayment]);
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-sm animate-fade-in">
@@ -90,7 +140,7 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              Recarga instantânea para apostas a R$ 1,00 a cartela.
+              Recarga segura para apostas a R$ 1,00 a cartela.
             </p>
           </div>
         </div>
@@ -129,7 +179,10 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
               className="w-full py-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-sm shadow-lg shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               {loading ? (
-                <span>Gerando QR Code Pix...</span>
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Gerando QR Code Pix...</span>
+                </>
               ) : (
                 <span>Gerar Pix de R$ {selectedAmount.toFixed(2)}</span>
               )}
@@ -155,7 +208,7 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
 
             {/* Copy / Paste Box */}
             <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1.5 block flex items-center justify-between">
+              <label className="text-xs font-semibold text-slate-300 mb-1.5 flex items-center justify-between">
                 <span>Código Pix Copia e Cola:</span>
                 {copied && (
                   <span className="text-emerald-400 text-[11px] font-bold flex items-center gap-1">
@@ -180,43 +233,72 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
               </div>
             </div>
 
-            {/* Simulated Payment Trigger */}
-            <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/30">
-              <div className="flex items-center justify-between mb-1.5">
-                <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-cyan-400" />
-                  Simulador de Confirmação Pix
+            {/* Payment Status & Strict Confirmation */}
+            <div className="p-3.5 rounded-xl bg-slate-950/80 border border-slate-800">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                  {isApproved ? (
+                    <Check className="w-4 h-4 text-emerald-400 stroke-[3]" />
+                  ) : (
+                    <Loader2 className="w-4 h-4 text-amber-400 animate-spin" />
+                  )}
+                  {isApproved ? 'Pagamento Aprovado' : 'Aguardando Confirmação'}
                 </span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.2 rounded bg-cyan-500/20 text-cyan-300">
-                  Mercado Pago Teste
+                <span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded ${
+                  isApproved
+                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                    : 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                }`}>
+                  {isApproved ? 'Confirmado' : 'Pendente Pix'}
                 </span>
               </div>
-              <p className="text-[11px] text-slate-300 mb-2">
-                Simula a notificação de pagamento recebido do Mercado Pago para creditar o saldo na hora.
+
+              <p className="text-[11px] text-slate-400 leading-relaxed mb-3">
+                O saldo só é atualizado quando houver a confirmação do pagamento.
               </p>
-              <button
-                onClick={handleSimulatePayment}
-                disabled={verifying}
-                className="w-full py-2 px-3 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                {verifying ? (
-                  <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5 stroke-[3]" />
-                )}
-                <span>Aprovar Pagamento Automaticamente (R$ {pixData.amount.toFixed(2)})</span>
-              </button>
+
+              {!isApproved && (
+                <button
+                  onClick={() => verifyPayment(true)}
+                  disabled={verifying}
+                  className="w-full py-2.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md transition-colors flex items-center justify-center gap-2 cursor-pointer disabled:opacity-75"
+                >
+                  {verifying ? (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                      <span>Verificando com o banco...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Verificar Confirmação de Pagamento</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              {statusNote && !isApproved && (
+                <div className="mt-2.5 p-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-1.5">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                  <span>{statusNote}</span>
+                </div>
+              )}
             </div>
 
             {successMessage && (
-              <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold text-center">
-                {successMessage}
+              <div className="p-3 rounded-xl bg-emerald-500/20 border border-emerald-500/50 text-emerald-300 text-xs font-bold text-center flex items-center justify-center gap-2">
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>{successMessage}</span>
               </div>
             )}
 
             <div className="flex items-center justify-between pt-2 border-t border-slate-800">
               <button
-                onClick={() => setPixData(null)}
+                onClick={() => {
+                  setPixData(null);
+                  setStatusNote('');
+                  setIsApproved(false);
+                }}
                 className="text-xs text-slate-400 hover:text-slate-200 underline cursor-pointer"
               >
                 Escolher outro valor

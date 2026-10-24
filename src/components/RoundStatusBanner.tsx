@@ -1,5 +1,5 @@
 import React from 'react';
-import { Timer, Zap, Trophy, ShoppingBag, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
+import { Timer, Zap, Trophy, ShoppingBag, ArrowRight, Sparkles } from 'lucide-react';
 import { RoundStatus } from '../types/bingo.ts';
 
 interface RoundStatusBannerProps {
@@ -8,9 +8,9 @@ interface RoundStatusBannerProps {
   waitingSecondsRemaining: number;
   ballDrawIntervalRemaining: number;
   totalCards: number;
-  potTotal: number;
   prizePot: number;
   userCardsCount: number;
+  realPlayersCount: number;
   onOpenBuyCards: () => void;
 }
 
@@ -20,9 +20,9 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
   waitingSecondsRemaining,
   ballDrawIntervalRemaining,
   totalCards,
-  potTotal,
   prizePot,
   userCardsCount,
+  realPlayersCount,
   onOpenBuyCards,
 }) => {
   // 60-second progress calculation
@@ -45,7 +45,7 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
       <div className="relative z-10 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
         {/* Left: Round Status & Timer */}
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="font-mono text-xs font-bold uppercase tracking-wider text-slate-400">
               Rodada #{roundId}
             </span>
@@ -60,7 +60,7 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
             {status === 'in_progress' && (
               <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 animate-pulse">
                 <Zap className="w-3 h-3 text-emerald-400" />
-                Sorteio Ao Vivo (10s)
+                Sorteio Ao Vivo
               </span>
             )}
 
@@ -70,6 +70,20 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
                 Prêmio Sendo Pago!
               </span>
             )}
+
+            {status === 'waiting' && (
+              <span
+                className={`text-[11px] font-bold px-2 py-0.5 rounded-full border ${
+                  realPlayersCount >= 2
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                    : 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                }`}
+              >
+                {realPlayersCount >= 2
+                  ? `✓ ${realPlayersCount} jogadores prontos para iniciar`
+                  : `Aguardando 2 jogadores (${realPlayersCount}/2)`}
+              </span>
+            )}
           </div>
 
           {/* Heading description based on status */}
@@ -77,21 +91,34 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
             <div>
               <div className="flex items-baseline gap-2">
                 <h2 className="text-xl sm:text-2xl font-black text-white font-['Outfit']">
-                  Próxima partida em{' '}
-                  <span className="text-amber-400 tabular-nums">
-                    {formatMinutesSeconds(waitingSecondsRemaining)}
-                  </span>
+                  {realPlayersCount >= 2 ? (
+                    <>
+                      Próxima partida em{' '}
+                      <span className="text-amber-400 tabular-nums">
+                        {formatMinutesSeconds(waitingSecondsRemaining)}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      Próxima partida:{' '}
+                      <span className="text-amber-400">
+                        Aguardando 2 jogadores
+                      </span>
+                    </>
+                  )}
                 </h2>
               </div>
-              <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-                Cartelas a R$ 1,00 cada. Garanta suas cartelas antes do início do sorteio!
-              </p>
+              <div className="mt-0.5">
+                <p className="text-xs sm:text-sm text-slate-400">
+                  A partida só inicia com no mínimo 2 jogadores com cartela.
+                </p>
+              </div>
 
-              {/* Progress bar for 60s */}
+              {/* Progress bar for 60s - runs only when at least 2 players */}
               <div className="w-full bg-slate-800/80 rounded-full h-1.5 mt-3 overflow-hidden">
                 <div
                   className="bg-gradient-to-r from-amber-500 to-emerald-400 h-full transition-all duration-1000 ease-linear rounded-full"
-                  style={{ width: `${100 - waitingProgress}%` }}
+                  style={{ width: realPlayersCount >= 2 ? `${100 - waitingProgress}%` : '0%' }}
                 />
               </div>
             </div>
@@ -101,7 +128,7 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-xl sm:text-2xl font-black text-white font-['Outfit']">
-                  Sorteando Números (1 a 60)
+                  Sorteando Números
                 </h2>
               </div>
               <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
@@ -109,7 +136,7 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
                 <span className="text-emerald-400 font-bold tabular-nums">
                   {ballDrawIntervalRemaining}s
                 </span>
-                . Marcação automática nas cartelas participantes!
+                .
               </p>
 
               {/* Progress bar for 10s */}
@@ -129,24 +156,21 @@ export const RoundStatusBanner: React.FC<RoundStatusBannerProps> = ({
                 Temos um Ganhador!
               </h2>
               <p className="text-xs sm:text-sm text-slate-300 mt-0.5">
-                Transferência de 80% do valor arrecadado efetuada via Pix Mercado Pago.
+                Transferência efetuada via Pix Mercado Pago ao vencedor.
               </p>
             </div>
           )}
         </div>
 
-        {/* Right: Prize Pot (80%) + CTA */}
+        {/* Right: Prize Pot */}
         <div className="flex flex-row md:flex-col items-center md:items-end justify-between border-t md:border-t-0 md:border-l border-slate-800 pt-3 md:pt-0 md:pl-6 gap-3">
           <div className="text-left md:text-right">
             <div className="flex items-center md:justify-end gap-1 text-[11px] font-semibold text-amber-400 uppercase tracking-wider">
               <Trophy className="w-3.5 h-3.5" />
-              <span>Prêmio 1º Colocado (80%)</span>
+              <span>PRÊMIO</span>
             </div>
             <div className="text-2xl sm:text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-emerald-400 font-['Outfit'] tabular-nums drop-shadow-sm">
               R$ {prizePot.toFixed(2)}
-            </div>
-            <div className="text-[11px] text-slate-400">
-              Total arrecadado: <span className="text-slate-300 font-medium">R$ {potTotal.toFixed(2)}</span> ({totalCards} cartelas)
             </div>
           </div>
 

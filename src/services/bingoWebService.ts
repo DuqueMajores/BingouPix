@@ -1,22 +1,13 @@
 /**
- * Bingo WebService Engine
- * Runs fully self-contained as a client-side WebService for GitHub Pages static hosting.
+ * BingouPix WebService Engine
+ * Real-Time Device-to-Device and Tab Sync for GitHub Pages.
+ * Every PC or Mobile Phone counts as 1 unique player.
+ * Minimum 2 players with bought cards required to start.
  */
 
 import { BingoRound, BingoCard, ChatMessage, PixKey, WinnerInfo } from '../types/bingo.ts';
 import { mercadoPagoService } from './mercadoPagoService.ts';
-
-// Simulated online active players
-const BOT_PLAYERS = [
-  { id: 'bot-1', name: 'Luciana_SP', avatar: '👩', pixKey: { type: 'cpf' as const, key: '123.***.***-89', name: 'Luciana M. Silva' } },
-  { id: 'bot-2', name: 'MarcosBingo', avatar: '👨', pixKey: { type: 'phone' as const, key: '(11) 9****-9922', name: 'Marcos A. Lima' } },
-  { id: 'bot-3', name: 'Patricia_RJ', avatar: '👩‍🦰', pixKey: { type: 'email' as const, key: 'patricia***@gmail.com', name: 'Patricia Costa' } },
-  { id: 'bot-4', name: 'Carlos_MG', avatar: '🧔', pixKey: { type: 'phone' as const, key: '(31) 9****-1234', name: 'Carlos E. Santos' } },
-  { id: 'bot-5', name: 'Bruna_RS', avatar: '👱‍♀️', pixKey: { type: 'cpf' as const, key: '456.***.***-10', name: 'Bruna F. Souza' } },
-  { id: 'bot-6', name: 'Rafael_BA', avatar: '👨‍🦱', pixKey: { type: 'cpf' as const, key: '789.***.***-34', name: 'Rafael N. Alves' } },
-  { id: 'bot-7', name: 'Fernanda_PR', avatar: '👧', pixKey: { type: 'email' as const, key: 'fernanda***@hotmail.com', name: 'Fernanda Rocha' } },
-  { id: 'bot-8', name: 'Diego_GO', avatar: '🧑', pixKey: { type: 'random' as const, key: 'e5b7***-992a', name: 'Diego B. Prado' } },
-];
+import { multiplayerSync, SyncMessage } from './multiplayerSync.ts';
 
 export interface UserProfile {
   id: string;
@@ -41,34 +32,42 @@ class BingoWebService {
 
   constructor() {
     this.user = this.loadUser();
-    this.round = this.initRound(101);
+    this.round = this.initRound(1);
     this.initChat();
-    this.seedBots();
+    this.initMultiplayerSync();
     this.startEngine();
   }
 
   private loadUser(): UserProfile {
+    const devId = multiplayerSync.playerId;
+    const devName = multiplayerSync.playerName;
+
+    let savedKey: PixKey = {
+      type: 'cpf',
+      key: '123.456.789-00',
+      name: `Jogador ${devName}`,
+    };
     try {
-      const stored = localStorage.getItem('pixbingo_user');
-      if (stored) return JSON.parse(stored);
+      const stored = localStorage.getItem('bingoupix_user_v2');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed.pixKey) savedKey = parsed.pixKey;
+      }
     } catch {
       // ignore
     }
+
     return {
-      id: 'user-me',
-      name: 'Você (Jogador)',
-      balance: 20.0,
-      pixKey: {
-        type: 'cpf',
-        key: '123.456.789-00',
-        name: 'Jogador PixBingo',
-      },
+      id: devId,
+      name: devName,
+      balance: 0.0, // Reset to 0.00
+      pixKey: savedKey,
     };
   }
 
   private saveUser() {
     try {
-      localStorage.setItem('pixbingo_user', JSON.stringify(this.user));
+      localStorage.setItem('bingoupix_user_v2', JSON.stringify(this.user));
     } catch {
       // ignore
     }
@@ -81,43 +80,14 @@ class BingoWebService {
       status: 'waiting',
       roundStartTime: Date.now(),
       waitingSecondsRemaining: 60, // 1 minute interval between rounds
-      ballDrawIntervalRemaining: 10, // 10s per ball
+      ballDrawIntervalRemaining: 10,
       drawnNumbers: [],
       currentNumber: null,
       totalCards: 0,
       potTotal: 0,
       prizePot: 0,
       winner: null,
-      historyRounds: [
-        {
-          userId: 'bot-1',
-          userName: 'Luciana_SP',
-          isUser: false,
-          cardId: 'card-prev-1',
-          patternType: 'row',
-          patternName: 'Linha Horizontal #3',
-          prizeAmount: 32.0,
-          totalPot: 40.0,
-          pixKey: { type: 'cpf', key: '123.***.***-89', name: 'Luciana M. Silva' },
-          mercadoPagoPaymentId: 'MP-PIX-9823481239',
-          mercadoPagoStatus: 'approved',
-          timestamp: Date.now() - 180000,
-        },
-        {
-          userId: 'bot-4',
-          userName: 'Carlos_MG',
-          isUser: false,
-          cardId: 'card-prev-2',
-          patternType: 'column',
-          patternName: 'Coluna Vertical #2',
-          prizeAmount: 48.0,
-          totalPot: 60.0,
-          pixKey: { type: 'phone', key: '(31) 9****-1234', name: 'Carlos E. Santos' },
-          mercadoPagoPaymentId: 'MP-PIX-9823489110',
-          mercadoPagoStatus: 'approved',
-          timestamp: Date.now() - 360000,
-        },
-      ],
+      historyRounds: [],
     };
   }
 
@@ -126,22 +96,84 @@ class BingoWebService {
       {
         id: 'msg-init-1',
         senderId: 'system',
-        senderName: 'Sistema PixBingo',
+        senderName: 'Sistema BingouPix',
         senderAvatar: '🎱',
-        text: 'Bem-vindo ao PixBingo! Cada cartela custa R$ 1,00 e o prêmio de 80% é transferido automaticamente via Pix Mercado Pago.',
+        text: 'Bem-vindo ao BingouPix! Cada PC ou celular conectado conta como 1 jogador. A partida inicia com no mínimo 2 jogadores.',
         isSystem: true,
         systemType: 'round',
-        timestamp: Date.now() - 40000,
-      },
-      {
-        id: 'msg-init-2',
-        senderId: 'bot-2',
-        senderName: 'MarcosBingo',
-        senderAvatar: '👨',
-        text: 'Boa sorte a todos nesta rodada! 🤞',
-        timestamp: Date.now() - 25000,
+        timestamp: Date.now() - 10000,
       },
     ];
+  }
+
+  // Cross-device and Cross-tab synchronization
+  private initMultiplayerSync() {
+    multiplayerSync.onMessage((msg: SyncMessage) => {
+      if (msg.type === 'BUY_CARDS') {
+        const { cards, roundId } = msg.payload;
+        if (cards && Array.isArray(cards)) {
+          cards.forEach((card: BingoCard) => {
+            if (!this.activeCards.some((c) => c.id === card.id)) {
+              this.activeCards.push({
+                ...card,
+                isUser: false, // card belongs to other device
+              });
+            }
+          });
+          this.updatePot();
+          this.notifyCards();
+
+          this.addChatMessageLocal({
+            senderId: msg.senderId,
+            senderName: msg.senderName,
+            senderAvatar: msg.senderName.includes('Celular') ? '📱' : '💻',
+            text: `Comprou ${cards.length} cartela(s) para a Rodada #${this.round.id}!`,
+          });
+        }
+      } else if (msg.type === 'CHAT') {
+        if (msg.payload && !this.chatMessages.some((m) => m.id === msg.payload.id)) {
+          this.chatMessages.push(msg.payload);
+          if (this.chatMessages.length > 80) this.chatMessages.shift();
+          this.notifyChat();
+        }
+      } else if (msg.type === 'BALL') {
+        const { number } = msg.payload;
+        if (number && !this.round.drawnNumbers.includes(number)) {
+          this.round.drawnNumbers.push(number);
+          this.round.currentNumber = number;
+          this.round.ballDrawIntervalRemaining = 10;
+
+          // Daub all cards
+          for (const card of this.activeCards) {
+            for (let r = 0; r < 5; r++) {
+              for (let c = 0; c < 5; c++) {
+                if (card.numbers[r][c] === number) {
+                  card.marked[r][c] = true;
+                }
+              }
+            }
+          }
+          this.notifyRound();
+          this.notifyCards();
+        }
+      } else if (msg.type === 'WINNER') {
+        if (msg.payload?.winner) {
+          this.round.winner = msg.payload.winner;
+          this.round.status = 'finished';
+          this.round.waitingSecondsRemaining = 10;
+          this.notifyRound();
+        }
+      }
+    });
+  }
+
+  // Count distinct real players (PCs or mobile phones) who have bought at least 1 card in the current round
+  public getRealPlayersCount(): number {
+    const playersSet = new Set<string>();
+    for (const card of this.activeCards) {
+      playersSet.add(card.userId);
+    }
+    return playersSet.size;
   }
 
   // Generate 5x5 card with numbers 1 to 60
@@ -179,7 +211,7 @@ class BingoWebService {
     });
 
     return {
-      id: `card-${this.round.id}-${Math.random().toString(36).substring(2, 8)}`,
+      id: `card-${this.round.id}-${userId}-${Math.random().toString(36).substring(2, 6)}`,
       roundId: this.round.id,
       userId,
       userName,
@@ -188,18 +220,6 @@ class BingoWebService {
       marked,
       hasWon: false,
     };
-  }
-
-  private seedBots() {
-    const botCount = 4 + Math.floor(Math.random() * 4);
-    for (let i = 0; i < botCount; i++) {
-      const bot = BOT_PLAYERS[i % BOT_PLAYERS.length];
-      const count = 1 + Math.floor(Math.random() * 3);
-      for (let c = 0; c < count; c++) {
-        this.activeCards.push(this.generate5x5Card(bot.id, bot.name, false));
-      }
-    }
-    this.updatePot();
   }
 
   private updatePot() {
@@ -293,44 +313,40 @@ class BingoWebService {
     return { won: false };
   }
 
-  // Main 1-second tick loop
+  // Main 1-second engine loop
   private startEngine() {
     if (this.timer) clearInterval(this.timer);
 
     this.timer = window.setInterval(async () => {
       if (this.round.status === 'waiting') {
-        this.round.waitingSecondsRemaining--;
+        const playersCount = this.getRealPlayersCount();
 
-        if (this.round.waitingSecondsRemaining === 45) {
-          const bot = BOT_PLAYERS[Math.floor(Math.random() * BOT_PLAYERS.length)];
-          this.addChatMessage({
-            senderId: bot.id,
-            senderName: bot.name,
-            senderAvatar: bot.avatar,
-            text: 'Comprei mais cartelas! Boa sorte pra nós! 🍀',
-          });
-        }
-
-        if (this.round.waitingSecondsRemaining <= 0) {
-          // Start round
-          this.round.status = 'in_progress';
-          this.round.ballDrawIntervalRemaining = 10;
-          this.round.drawnNumbers = [];
-          this.round.currentNumber = null;
-          this.round.winner = null;
-
-          if (this.activeCards.length === 0) {
-            this.seedBots();
+        // O tempo para a próxima partida só começa a correr com no mínimo 2 jogadores com cartela
+        if (playersCount >= 2) {
+          if (this.round.waitingSecondsRemaining > 0) {
+            this.round.waitingSecondsRemaining--;
           }
 
-          this.addChatMessage({
-            senderId: 'system',
-            senderName: 'Sistema PixBingo',
-            senderAvatar: '🎲',
-            text: `Rodada #${this.round.id} INICIADA! ${this.activeCards.length} cartelas participando. Prêmio: R$ ${this.round.prizePot.toFixed(2)} (80% via Pix).`,
-            isSystem: true,
-            systemType: 'round',
-          });
+          if (this.round.waitingSecondsRemaining <= 0) {
+            // Start round
+            this.round.status = 'in_progress';
+            this.round.ballDrawIntervalRemaining = 10;
+            this.round.drawnNumbers = [];
+            this.round.currentNumber = null;
+            this.round.winner = null;
+
+            this.addChatMessageLocal({
+              senderId: 'system',
+              senderName: 'Sistema BingouPix',
+              senderAvatar: '🎲',
+              text: `Rodada #${this.round.id} INICIADA com ${playersCount} jogadores participantes e ${this.activeCards.length} cartelas em jogo!`,
+              isSystem: true,
+              systemType: 'round',
+            });
+          }
+        } else {
+          // Mantém em 60s pausado enquanto houver menos de 2 jogadores
+          this.round.waitingSecondsRemaining = 60;
         }
         this.notifyRound();
       } else if (this.round.status === 'in_progress') {
@@ -353,9 +369,12 @@ class BingoWebService {
           const drawn = available[Math.floor(Math.random() * available.length)];
           this.round.drawnNumbers.push(drawn);
           this.round.currentNumber = drawn;
-          this.round.ballDrawIntervalRemaining = 10; // 10s for next ball
+          this.round.ballDrawIntervalRemaining = 10;
 
-          this.addChatMessage({
+          // Broadcast ball draw to all other devices/tabs
+          multiplayerSync.broadcast('BALL', { roundId: this.round.id, number: drawn });
+
+          this.addChatMessageLocal({
             senderId: 'system',
             senderName: 'Globo do Bingo',
             senderAvatar: '🎱',
@@ -387,16 +406,9 @@ class BingoWebService {
               };
 
               const prizeAmount = this.round.prizePot;
-              let winnerPixKey = this.user.pixKey;
-
-              if (!card.isUser) {
-                const botObj = BOT_PLAYERS.find((b) => b.id === card.userId);
-                winnerPixKey = botObj?.pixKey || {
-                  type: 'cpf',
-                  key: '123.***.***-00',
-                  name: card.userName,
-                };
-              }
+              const winnerPixKey = card.isUser
+                ? this.user.pixKey || { type: 'cpf', key: '123.456.789-00', name: card.userName }
+                : { type: 'cpf' as const, key: '987.654.321-00', name: card.userName };
 
               const winnerObj: WinnerInfo = {
                 userId: card.userId,
@@ -407,7 +419,7 @@ class BingoWebService {
                 patternName: win.name || 'Linha Premiada',
                 prizeAmount,
                 totalPot: this.round.potTotal,
-                pixKey: winnerPixKey || { type: 'cpf', key: '123.456.789-00', name: card.userName },
+                pixKey: winnerPixKey,
                 mercadoPagoPaymentId: 'PROCESSANDO...',
                 mercadoPagoStatus: 'in_process',
                 timestamp: Date.now(),
@@ -416,6 +428,9 @@ class BingoWebService {
               this.round.winner = winnerObj;
               this.round.status = 'finished';
               this.round.waitingSecondsRemaining = 10;
+
+              // Broadcast winner to other devices
+              multiplayerSync.broadcast('WINNER', { winner: winnerObj });
 
               // Credit user balance if user won
               if (card.isUser) {
@@ -439,17 +454,17 @@ class BingoWebService {
                   if (this.round.historyRounds.length > 20) this.round.historyRounds.pop();
                   this.notifyRound();
 
-                  this.addChatMessage({
+                  this.addChatMessageLocal({
                     senderId: 'system',
                     senderName: 'Mercado Pago Pix',
                     senderAvatar: '💸',
-                    text: `Prêmio de R$ ${prizeAmount.toFixed(2)} transferido via Pix Mercado Pago para ${winnerObj.userName}! ID: ${payout.paymentId}`,
+                    text: `Prêmio de R$ ${prizeAmount.toFixed(2)} transferido via Pix para ${winnerObj.userName}!`,
                     isSystem: true,
                     systemType: 'pix',
                   });
                 });
 
-              this.addChatMessage({
+              this.addChatMessageLocal({
                 senderId: 'system',
                 senderName: 'BINGO!',
                 senderAvatar: '🏆',
@@ -473,13 +488,12 @@ class BingoWebService {
           this.round = this.initRound(nextId);
           this.round.historyRounds = history;
           this.activeCards = [];
-          this.seedBots();
 
-          this.addChatMessage({
+          this.addChatMessageLocal({
             senderId: 'system',
-            senderName: 'Sistema PixBingo',
+            senderName: 'Sistema BingouPix',
             senderAvatar: '⏳',
-            text: `Rodada #${nextId} aberta! 1 minuto para compra de cartelas a R$ 1,00.`,
+            text: `Rodada #${nextId} aberta! A contagem regressiva inicia com no mínimo 2 jogadores com cartela.`,
             isSystem: true,
             systemType: 'round',
           });
@@ -503,18 +517,26 @@ class BingoWebService {
     this.user.balance = Number((this.user.balance - cost).toFixed(2));
     this.saveUser();
 
+    const newCards: BingoCard[] = [];
     for (let i = 0; i < quantity; i++) {
       const card = this.generate5x5Card(this.user.id, this.user.name, true);
       this.activeCards.push(card);
+      newCards.push(card);
     }
 
     this.updatePot();
     this.notifyCards();
 
-    this.addChatMessage({
+    // Broadcast card purchase to all other devices/PCs/phones
+    multiplayerSync.broadcast('BUY_CARDS', {
+      cards: newCards,
+      roundId: this.round.id,
+    });
+
+    this.addChatMessageLocal({
       senderId: this.user.id,
       senderName: this.user.name,
-      senderAvatar: '🎟️',
+      senderAvatar: this.user.name.includes('Celular') ? '📱' : '💻',
       text: `Comprou ${quantity} cartela(s) para a Rodada #${this.round.id}!`,
     });
 
@@ -530,7 +552,7 @@ class BingoWebService {
     this.user.balance = Number((this.user.balance + amount).toFixed(2));
     this.saveUser();
 
-    this.addChatMessage({
+    this.addChatMessageLocal({
       senderId: 'system',
       senderName: 'Mercado Pago Pix',
       senderAvatar: '💳',
@@ -541,6 +563,12 @@ class BingoWebService {
   }
 
   public addChatMessage(msg: Omit<ChatMessage, 'id' | 'timestamp'>) {
+    const newMsg = this.addChatMessageLocal(msg);
+    multiplayerSync.broadcast('CHAT', newMsg);
+    return newMsg;
+  }
+
+  private addChatMessageLocal(msg: Omit<ChatMessage, 'id' | 'timestamp'>) {
     const newMsg: ChatMessage = {
       ...msg,
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
@@ -563,6 +591,10 @@ class BingoWebService {
 
   public getUserCards(): BingoCard[] {
     return this.activeCards.filter((c) => c.isUser);
+  }
+
+  public getAllActiveCards(): BingoCard[] {
+    return [...this.activeCards];
   }
 
   public getChat(): ChatMessage[] {

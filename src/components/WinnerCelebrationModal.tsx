@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import confetti from 'canvas-confetti';
-import { Trophy, Award, CheckCircle2, DollarSign, X, Share2, Sparkles, ShieldCheck } from 'lucide-react';
+import { Trophy, CheckCircle2, X, Sparkles, ShieldCheck } from 'lucide-react';
 import { WinnerInfo } from '../types/bingo.ts';
 import { soundManager } from '../utils/audio.ts';
 
@@ -15,10 +15,9 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
   onClose,
   waitingSecondsRemaining,
 }) => {
-  if (!winner) return null;
-
   useEffect(() => {
-    // Fire festive confetti showers
+    if (!winner) return;
+
     try {
       confetti({
         particleCount: 80,
@@ -50,7 +49,9 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
     } catch {
       // ignore
     }
-  }, [winner.cardId]);
+  }, [winner]);
+
+  if (!winner) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-fade-in">
@@ -87,36 +88,26 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
           </p>
         </div>
 
-        {/* Prize Box (80% Arrecadado) */}
+        {/* Prize Box */}
         <div className="my-4 py-4 px-5 rounded-2xl bg-gradient-to-r from-amber-500/15 via-emerald-500/15 to-amber-500/15 border border-amber-500/40">
           <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
-            Prêmio do 1º Colocado (80% da Arrecadação)
+            PRÊMIO
           </span>
           <div className="text-3xl sm:text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-amber-200 to-emerald-400 font-['Outfit'] tabular-nums my-1">
             R$ {winner.prizeAmount.toFixed(2)}
           </div>
-          <span className="text-[11px] text-slate-400">
-            Arrecadação total da rodada: R$ {winner.totalPot.toFixed(2)}
-          </span>
         </div>
 
-        {/* Mercado Pago Pix Receipt Card */}
+        {/* Pix Receipt Card */}
         <div className="text-left bg-slate-950/80 border border-slate-800 rounded-2xl p-4 mb-5 text-xs space-y-2 font-mono">
           <div className="flex items-center justify-between pb-2 border-b border-slate-800 font-sans">
             <div className="flex items-center gap-1.5 font-bold text-slate-200">
               <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span>Comprovante Pix Mercado Pago</span>
+              <span>Comprovante Pix</span>
             </div>
             <span className="inline-flex items-center gap-1 text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
               <CheckCircle2 className="w-3 h-3" />
               Transferido
-            </span>
-          </div>
-
-          <div className="flex justify-between text-slate-400">
-            <span>ID Mercado Pago:</span>
-            <span className="text-slate-200 truncate max-w-[200px]">
-              {winner.mercadoPagoPaymentId}
             </span>
           </div>
 
