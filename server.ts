@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import http from 'http';
 import crypto from 'crypto';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -851,9 +852,12 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    const staticRoot = fs.existsSync(path.join(__dirname, 'dist'))
+      ? path.join(__dirname, 'dist')
+      : path.join(__dirname, 'docs');
+    app.use(express.static(staticRoot));
     app.get('*', (req: Request, res: Response) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      res.sendFile(path.join(staticRoot, 'index.html'));
     });
   }
 
