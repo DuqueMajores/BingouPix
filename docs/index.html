@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>BingouPix - Ao Vivo & Pix Mercado Pago</title>
+    <meta name="description" content="BingouPix - Bingo online em tempo real com cartelas a R$ 1,00, sorteio automático a cada 10s e prêmio via Pix Mercado Pago." />
+    <meta property="og:title" content="BingouPix - Ao Vivo & Pix Mercado Pago" />
+    <meta property="og:description" content="BingouPix - Bingo online em tempo real com cartelas a R$ 1,00, sorteio automático a cada 10s e prêmio via Pix Mercado Pago." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;0,900;1,600&family=Chango&family=Outfit:wght@500;700;800;900&display=swap" rel="stylesheet">
+
+    <!-- Mercado Pago Official SDK JS v2 -->
+    <script src="https://sdk.mercadopago.com/js/v2"></script>
+
+    <!-- GitHub Pages Subdirectory & Trailing Slash Fix -->
+    <script>
+      (function() {
+        // Ensure trailing slash on GitHub Pages directory URLs so relative paths resolve cleanly
+        var path = window.location.pathname;
+        if (path.length > 1 && !path.endsWith('/') && !path.split('/').pop().includes('.')) {
+          window.location.replace(path + '/' + window.location.search + window.location.hash);
+        }
+      })();
+    </script>
+    <script type="module" crossorigin src="./assets/index-ClLTrZN_.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-DF6egDuC.css">
+  </head>
+  <body class="bg-slate-950 text-slate-100 antialiased selection:bg-amber-500 selection:text-black min-h-screen">
+    <!-- Initial Splash Loader to avoid blank white screen before React hydration -->
+    <div id="root">
+      <div style="min-height:100vh;background:#020617;color:#f8fafc;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:'Plus Jakarta Sans',sans-serif;text-align:center;padding:24px;">
+        <div style="width:64px;height:64px;border-radius:20px;background:linear-gradient(135deg,#f59e0b,#10b981);display:flex;align-items:center;justify-content:center;font-size:32px;box-shadow:0 10px 25px rgba(245,158,11,0.25);margin-bottom:16px;">
+          🎱
+        </div>
+        <div style="font-size:26px;font-weight:900;letter-spacing:-0.5px;color:#ffffff;margin-bottom:6px;">
+          BingouPix
+        </div>
+        <div style="font-size:13px;color:#94a3b8;margin-bottom:20px;max-width:320px;line-height:1.5;">
+          Conectando ao sistema de Bingo em tempo real e Mercado Pago...
+        </div>
+        <div style="width:32px;height:32px;border:3px solid #1e293b;border-top-color:#10b981;border-radius:50%;animation:bp-spin 0.8s linear infinite;"></div>
+        <style>@keyframes bp-spin{to{transform:rotate(360deg)}}</style>
+      </div>
+    </div>
+
+    <!-- Main Module Application -->
+
+    <!-- GitHub Pages uncompiled raw root fallback -->
+    <script>
+      // If deployed raw to root of GitHub Pages without build, route to /docs/ or /dist/
+      if (window.location.hostname.endsWith('github.io') && !window.location.pathname.includes('/dist') && !window.location.pathname.includes('/docs')) {
+        setTimeout(function() {
+          // If the React app hasn't replaced the splash after 3.5s, check if docs/ exists
+          var splash = document.querySelector('#root > div > div');
+          if (splash) {
+            var basePath = window.location.pathname.replace(/\/$/, '');
+            fetch(basePath + '/docs/index.html', { method: 'HEAD' }).then(function(res) {
+              if (res.ok) window.location.replace(basePath + '/docs/' + window.location.search + window.location.hash);
+            }).catch(function() {});
+          }
+        }, 3500);
+      }
+    </script>
+  </body>
+</html>

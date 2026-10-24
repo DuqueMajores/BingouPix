@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <title>BingouPix - Redirecionando...</title>
+    <script>
+      // Single Page Application redirect for GitHub Pages
+      (function() {
+        var path = window.location.pathname;
+        var search = window.location.search;
+        var hash = window.location.hash;
+
+        // If the path contains /docs/ or /dist/ or root repo
+        var segments = path.split('/').filter(Boolean);
+        var repoBase = segments.length > 0 ? '/' + segments[0] + '/' : '/';
+
+        // Check if inside /docs or /dist
+        if (path.includes('/docs/')) {
+          repoBase += 'docs/';
+        } else if (path.includes('/dist/')) {
+          repoBase += 'dist/';
+        }
+
+        window.location.replace(repoBase + search + hash);
+      })();
+    </script>
+  </head>
+  <body style="background:#020617;color:#94a3b8;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;">
+    <p>Redirecionando para o BingouPix...</p>
+  </body>
+</html>

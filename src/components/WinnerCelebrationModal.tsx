@@ -132,6 +132,15 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
             </span>
           </div>
 
+          {winner.mercadoPagoPaymentId && (
+            <div className="flex justify-between text-slate-500 text-[10px]">
+              <span>ID Transação:</span>
+              <span className="font-mono text-slate-300 truncate max-w-[200px]">
+                {winner.mercadoPagoPaymentId}
+              </span>
+            </div>
+          )}
+
           <div className="flex justify-between text-slate-500 text-[10px] pt-1 border-t border-slate-800/80">
             <span>Data / Horário:</span>
             <span>{new Date(winner.timestamp).toLocaleTimeString('pt-BR')}</span>

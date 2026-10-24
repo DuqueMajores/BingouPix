@@ -21,17 +21,25 @@ function getAudioContext(): AudioContext | null {
 
 export const soundManager = {
   getMuted(): boolean {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('pixbingo_sound_muted');
-      if (stored !== null) isMuted = stored === 'true';
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        const stored = localStorage.getItem('pixbingo_sound_muted');
+        if (stored !== null) isMuted = stored === 'true';
+      }
+    } catch {
+      // ignore
     }
     return isMuted;
   },
 
   setMuted(muted: boolean) {
     isMuted = muted;
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('pixbingo_sound_muted', String(muted));
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        localStorage.setItem('pixbingo_sound_muted', String(muted));
+      }
+    } catch {
+      // ignore
     }
   },
 

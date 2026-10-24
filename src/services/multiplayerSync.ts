@@ -32,13 +32,27 @@ class MultiplayerSync {
 
   private initPlayerId(): string {
     // Generate unique ID per browser session/device
-    let id = sessionStorage.getItem('bingoupix_device_player_id');
+    let id: string | null = null;
+    try {
+      if (typeof window !== 'undefined' && window.sessionStorage) {
+        id = sessionStorage.getItem('bingoupix_device_player_id');
+      }
+    } catch {
+      // ignore security restrictions
+    }
+
     if (!id) {
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      const isMobile = typeof navigator !== 'undefined' && /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
       const prefix = isMobile ? 'cel' : 'pc';
       const rand = Math.random().toString(36).substring(2, 7);
       id = `${prefix}-${rand}`;
-      sessionStorage.setItem('bingoupix_device_player_id', id);
+      try {
+        if (typeof window !== 'undefined' && window.sessionStorage) {
+          sessionStorage.setItem('bingoupix_device_player_id', id);
+        }
+      } catch {
+        // ignore
+      }
     }
     return id;
   }
