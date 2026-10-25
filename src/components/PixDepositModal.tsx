@@ -15,7 +15,8 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
   onClose,
   onDepositSuccess,
 }) => {
-  const [selectedAmount, setSelectedAmount] = useState(10);
+  const [selectedAmount, setSelectedAmount] = useState(1);
+  const [customAmount, setCustomAmount] = useState('');
   const [pixData, setPixData] = useState<PixPaymentInfo | null>(null);
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -27,16 +28,17 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
   const isApprovedRef = useRef(false);
   isApprovedRef.current = isApproved;
 
-  const quickAmounts = [5, 10, 20, 50, 100];
+  const quickAmounts = [1, 5, 10, 20, 50, 100];
 
   const handleGeneratePix = async (amount: number) => {
-    setSelectedAmount(amount);
+    const finalAmount = Math.max(1, amount);
+    setSelectedAmount(finalAmount);
     setLoading(true);
     setSuccessMessage('');
     setStatusNote('');
     setIsApproved(false);
     try {
-      const data = await mercadoPagoService.createPixDeposit(amount);
+      const data = await mercadoPagoService.createPixDeposit(finalAmount);
       setPixData(data);
     } catch (e) {
       console.error(e);
@@ -151,14 +153,17 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
             <label className="text-xs font-bold text-slate-700 mb-2 block">
               Escolha o valor do depósito:
             </label>
-            <div className="grid grid-cols-3 gap-2 mb-4">
+            <div className="grid grid-cols-3 gap-2 mb-3">
               {quickAmounts.map((amt) => (
                 <button
                   key={amt}
-                  onClick={() => setSelectedAmount(amt)}
+                  onClick={() => {
+                    setSelectedAmount(amt);
+                    setCustomAmount('');
+                  }}
                   className={`py-3 px-2 rounded-xl border text-center transition-all cursor-pointer ${
-                    selectedAmount === amt
-                      ? 'bg-emerald-50 border-emerald-400 text-emerald-800 shadow-xs'
+                    selectedAmount === amt && !customAmount
+                      ? 'bg-emerald-50 border-emerald-500 text-emerald-800 shadow-xs ring-1 ring-emerald-400'
                       : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
                   }`}
                 >
@@ -173,10 +178,38 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
               ))}
             </div>
 
+            {/* Custom amount input */}
+            <div className="mb-4">
+              <label className="text-[11px] font-semibold text-slate-500 mb-1.5 block">
+                Ou digite outro valor (mínimo R$ 1,00):
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">
+                  R$
+                </span>
+                <input
+                  type="number"
+                  min="1"
+                  step="any"
+                  placeholder="Ex: 1,00 ou 15,00"
+                  value={customAmount}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setCustomAmount(val);
+                    const parsed = parseFloat(val);
+                    if (!isNaN(parsed) && parsed >= 1) {
+                      setSelectedAmount(parsed);
+                    }
+                  }}
+                  className="w-full pl-10 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-800 focus:outline-none focus:border-emerald-500 focus:bg-white transition-colors"
+                />
+              </div>
+            </div>
+
             <button
               onClick={() => handleGeneratePix(selectedAmount)}
-              disabled={loading}
-              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
+              disabled={loading || selectedAmount < 1}
+              className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-sm shadow-md shadow-emerald-600/20 active:scale-95 transition-all cursor-pointer flex items-center justify-center gap-2"
             >
               {loading ? (
                 <>
