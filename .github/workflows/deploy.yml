@@ -35,7 +35,7 @@ jobs:
 
       - name: Build static site
         env:
-          VITE_API_BASE_URL: ${{ vars.RENDER_BACKEND_URL || secrets.RENDER_BACKEND_URL || 'https://bingoupix.onrender.com' }}
+          VITE_API_BASE_URL: https://bingoupix.onrender.com
         run: npm run build
 
       - name: Setup Pages

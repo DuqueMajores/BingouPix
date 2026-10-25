@@ -16,16 +16,24 @@ const app = express();
 const server = http.createServer(app);
 const PORT = Number(process.env.PORT || 3000);
 
+function normalizeOrigin(value: string): string {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return value.trim().replace(/\/$/, '');
+  }
+}
+
 const allowedOrigins = new Set(
   (process.env.FRONTEND_URL || '')
     .split(',')
-    .map((origin) => origin.trim().replace(/\/$/, ''))
+    .map(normalizeOrigin)
     .filter(Boolean),
 );
 
 app.use((req: Request, res: Response, next) => {
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.has(origin.replace(/\/$/, ''))) {
+  if (origin && allowedOrigins.has(normalizeOrigin(origin))) {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
