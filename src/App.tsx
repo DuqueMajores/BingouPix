@@ -85,7 +85,7 @@ export default function App() {
 
   // Handlers
   const handleBuyCards = async (quantity: number): Promise<boolean> => {
-    const res = bingoWebService.buyCards(quantity);
+    const res = await bingoWebService.buyCards(quantity);
     setRealPlayersCount(bingoWebService.getRound().activePlayerCount ?? bingoWebService.getRealPlayersCount());
     return res.success;
   };

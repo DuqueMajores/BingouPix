@@ -34,12 +34,10 @@ class BingoWebService {
     this.user = this.loadUser();
     try { sessionStorage.setItem('bingoupix_player_name', this.user.name); } catch { /* private mode */ }
     this.round = this.initRound(1);
-    this.restoreLocalGameState();
     this.initChat();
     this.initMultiplayerSync();
-    this.startEngine();
     void this.syncBackendState();
-    window.setInterval(() => void this.syncBackendState(), 3000);
+    window.setInterval(() => void this.syncBackendState(), 1000);
   }
 
   private apiUrl(path: string): string {
@@ -176,59 +174,11 @@ class BingoWebService {
   // Cross-device and Cross-tab synchronization
   private initMultiplayerSync() {
     multiplayerSync.onMessage((msg: SyncMessage) => {
-      if (msg.type === 'BUY_CARDS') {
-        const { cards, roundId } = msg.payload;
-        if (cards && Array.isArray(cards)) {
-          cards.forEach((card: BingoCard) => {
-            if (!this.activeCards.some((c) => c.id === card.id)) {
-              this.activeCards.push({
-                ...card,
-                isUser: false, // card belongs to other device
-              });
-            }
-          });
-          this.updatePot();
-          this.notifyCards();
-
-          this.addChatMessageLocal({
-            senderId: msg.senderId,
-            senderName: msg.senderName,
-            senderAvatar: msg.senderName.includes('Celular') ? '📱' : '💻',
-            text: `Comprou ${cards.length} cartela(s) para a Rodada #${this.round.id}!`,
-          });
-        }
-      } else if (msg.type === 'CHAT') {
+      if (msg.type === 'CHAT') {
         if (msg.payload && !this.chatMessages.some((m) => m.id === msg.payload.id)) {
           this.chatMessages.push(msg.payload);
           if (this.chatMessages.length > 80) this.chatMessages.shift();
           this.notifyChat();
-        }
-      } else if (msg.type === 'BALL') {
-        const { number } = msg.payload;
-        if (number && !this.round.drawnNumbers.includes(number)) {
-          this.round.drawnNumbers.push(number);
-          this.round.currentNumber = number;
-          this.round.ballDrawIntervalRemaining = 10;
-
-          // Daub all cards
-          for (const card of this.activeCards) {
-            for (let r = 0; r < 5; r++) {
-              for (let c = 0; c < 5; c++) {
-                if (card.numbers[r][c] === number) {
-                  card.marked[r][c] = true;
-                }
-              }
-            }
-          }
-          this.notifyRound();
-          this.notifyCards();
-        }
-      } else if (msg.type === 'WINNER') {
-        if (msg.payload?.winner) {
-          this.round.winner = msg.payload.winner;
-          this.round.status = 'finished';
-          this.round.waitingSecondsRemaining = 10;
-          this.notifyRound();
         }
       }
     });
@@ -602,38 +552,30 @@ class BingoWebService {
   }
 
   // Public Actions
-  public buyCards(quantity: number): { success: boolean; error?: string } {
+  public async buyCards(quantity: number): Promise<{ success: boolean; error?: string }> {
     const cost = quantity * 1.0;
     if (this.user.balance < cost) {
       return { success: false, error: 'Saldo insuficiente. Recarregue via Pix.' };
     }
 
-    this.user.balance = Number((this.user.balance - cost).toFixed(2));
-    this.saveUser();
-
-    const newCards: BingoCard[] = [];
-    for (let i = 0; i < quantity; i++) {
-      const card = this.generate5x5Card(this.user.id, this.user.name, true);
-      this.activeCards.push(card);
-      newCards.push(card);
+    try {
+      const response = await fetch(this.apiUrl('/api/game/buy-cards'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quantity, userId: this.user.id, userName: this.user.name }),
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return { success: false, error: data.error || 'Não foi possível comprar a cartela.' };
+      this.user.balance = Number(data.newBalance) || 0;
+      this.activeCards = Array.isArray(data.boughtCards)
+        ? [...this.activeCards, ...data.boughtCards]
+        : this.activeCards;
+      this.saveUser();
+      this.notifyCards();
+      void this.syncBackendState();
+    } catch {
+      return { success: false, error: 'Servidor indisponível. Tente novamente.' };
     }
-
-    this.updatePot();
-    this.notifyCards();
-
-    // Broadcast card purchase to all other devices/PCs/phones
-    multiplayerSync.broadcast('BUY_CARDS', {
-      cards: newCards,
-      roundId: this.round.id,
-    });
-
-    void fetch(this.apiUrl('/api/game/buy-cards'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ quantity, userId: this.user.id, userName: this.user.name }),
-    }).then(() => this.syncBackendState()).catch(() => {
-      // The local state remains available while the backend reconnects.
-    });
 
     this.addChatMessageLocal({
       senderId: this.user.id,

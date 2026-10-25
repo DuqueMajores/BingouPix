@@ -270,7 +270,9 @@ function loadPersistedState() {
     if (typeof state.ballDrawIntervalRemaining === 'number') ballDrawIntervalRemaining = state.ballDrawIntervalRemaining;
     if (Array.isArray(state.drawnNumbers)) drawnNumbers = state.drawnNumbers;
     if (state.currentDrawnNumber !== undefined) currentDrawnNumber = state.currentDrawnNumber;
-    if (Array.isArray(state.activeCards)) activeCards = state.activeCards;
+    if (Array.isArray(state.activeCards)) {
+      activeCards = state.activeCards.filter((card) => !card.userId.startsWith('bot-'));
+    }
     if (state.currentWinner !== undefined) currentWinner = state.currentWinner;
     if (Array.isArray(state.winnerHistory)) winnerHistory.splice(0, winnerHistory.length, ...state.winnerHistory);
     if (Array.isArray(state.chatMessages)) chatMessages.splice(0, chatMessages.length, ...state.chatMessages);
@@ -572,25 +574,6 @@ setInterval(async () => {
     }
     waitingSecondsRemaining--;
 
-    // Periodically post bot chat chatter during waiting period
-    if (waitingSecondsRemaining === 45) {
-      const bot = BOT_PLAYERS[Math.floor(Math.random() * BOT_PLAYERS.length)];
-      addChatMessage({
-        senderId: bot.id,
-        senderName: bot.name,
-        senderAvatar: bot.avatar,
-        text: 'Vamos lá, rodada começando em breve! 🍀'
-      });
-    } else if (waitingSecondsRemaining === 20) {
-      const bot = BOT_PLAYERS[Math.floor(Math.random() * BOT_PLAYERS.length)];
-      addChatMessage({
-        senderId: bot.id,
-        senderName: bot.name,
-        senderAvatar: bot.avatar,
-        text: 'Comprei mais 2 cartelas. Esse prêmio de 80% vai ser meu! 🤑'
-      });
-    }
-
     if (waitingSecondsRemaining <= 0) {
       // Transition to IN_PROGRESS
       roundStatus = 'in_progress';
@@ -740,9 +723,6 @@ setInterval(async () => {
       currentDrawnNumber = null;
       activeCards = [];
       currentWinner = null;
-
-      // Seed next bots
-      seedBotCards();
 
       addChatMessage({
         senderId: 'system',
