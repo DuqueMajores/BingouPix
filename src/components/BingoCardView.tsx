@@ -8,11 +8,11 @@ interface BingoCardViewProps {
 }
 
 const COLUMN_HEADERS = [
-  { label: 'B', range: '1-12', color: 'text-rose-400 bg-rose-500/10 border-rose-500/30' },
-  { label: 'I', range: '13-24', color: 'text-amber-400 bg-amber-500/10 border-amber-500/30' },
-  { label: 'N', range: '25-36', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30' },
-  { label: 'G', range: '37-48', color: 'text-sky-400 bg-sky-500/10 border-sky-500/30' },
-  { label: 'O', range: '49-60', color: 'text-purple-400 bg-purple-500/10 border-purple-500/30' },
+  { label: 'B', range: '1-12', color: 'text-rose-700 bg-rose-50 border-rose-200' },
+  { label: 'I', range: '13-24', color: 'text-amber-800 bg-amber-50 border-amber-200' },
+  { label: 'N', range: '25-36', color: 'text-emerald-800 bg-emerald-50 border-emerald-200' },
+  { label: 'G', range: '37-48', color: 'text-sky-800 bg-sky-50 border-sky-200' },
+  { label: 'O', range: '49-60', color: 'text-purple-800 bg-purple-50 border-purple-200' },
 ];
 
 export const BingoCardView: React.FC<BingoCardViewProps> = ({ card, currentNumber }) => {
@@ -48,32 +48,32 @@ export const BingoCardView: React.FC<BingoCardViewProps> = ({ card, currentNumbe
     <div
       className={`relative rounded-2xl p-3.5 sm:p-4 transition-all duration-300 ${
         card.hasWon
-          ? 'bg-gradient-to-b from-amber-950/80 via-slate-900 to-slate-950 border-2 border-amber-400 shadow-[0_0_25px_rgba(245,158,11,0.35)] scale-[1.01]'
-          : 'bg-slate-900/90 border border-slate-800 hover:border-slate-700 shadow-md'
+          ? 'bg-gradient-to-b from-amber-50/80 via-white to-white border-2 border-amber-400 shadow-md scale-[1.01]'
+          : 'bg-white border border-slate-200 hover:border-slate-300 shadow-xs'
       }`}
     >
       {/* Top Card Info Bar */}
       <div className="flex items-center justify-between gap-2 mb-2.5">
         <div className="flex items-center gap-1.5">
-          <span className="font-mono text-xs font-bold text-slate-400 bg-slate-800/80 px-2 py-0.5 rounded-md">
+          <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
             #{card.id.split('-').pop()}
           </span>
           {card.hasWon ? (
-            <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 shadow-sm animate-bounce">
+            <span className="inline-flex items-center gap-1 text-[11px] font-black px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 shadow-xs animate-bounce">
               <Award className="w-3 h-3" />
               PREMIADA!
             </span>
           ) : minMissingInLine === 1 ? (
-            <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse">
-              <Sparkles className="w-2.5 h-2.5 text-amber-400" />
+            <span className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <Sparkles className="w-2.5 h-2.5 text-emerald-600" />
               Falta 1 para Linha!
             </span>
           ) : null}
         </div>
 
-        <div className="text-[11px] font-medium text-slate-400">
+        <div className="text-[11px] font-medium text-slate-500">
           Marcados:{' '}
-          <span className="font-bold text-emerald-400 tabular-nums">
+          <span className="font-bold text-emerald-700 tabular-nums">
             {totalMarked}/25
           </span>
         </div>
@@ -109,11 +109,11 @@ export const BingoCardView: React.FC<BingoCardViewProps> = ({ card, currentNumbe
                 key={`${rIdx}-${cIdx}`}
                 className={`relative aspect-square flex items-center justify-center rounded-xl font-['Outfit'] font-black text-sm sm:text-base transition-all select-none ${
                   isWinner
-                    ? 'bg-gradient-to-br from-amber-400 to-yellow-500 text-slate-950 shadow-[0_0_12px_rgba(251,191,36,0.8)] scale-105 z-10'
+                    ? 'bg-amber-400 text-slate-950 shadow-sm scale-105 z-10'
                     : isMarked
-                    ? 'bg-gradient-to-br from-emerald-600/90 to-teal-700 text-white shadow-inner border border-emerald-400/50'
-                    : 'bg-slate-950/70 border border-slate-800/80 text-slate-200 hover:border-slate-700'
-                } ${isLatest ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-50 border border-slate-200 text-slate-700 hover:bg-slate-100'
+                } ${isLatest ? 'ring-2 ring-emerald-500' : ''}`}
               >
                 {/* Daub stamp overlay */}
                 {isMarked && (
@@ -121,11 +121,11 @@ export const BingoCardView: React.FC<BingoCardViewProps> = ({ card, currentNumbe
                     <div
                       className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center ${
                         isWinner
-                          ? 'bg-amber-300 text-slate-950'
-                          : 'bg-emerald-500/20 text-emerald-300'
+                          ? 'bg-white/30 text-slate-950'
+                          : 'bg-white/20 text-white'
                       }`}
                     >
-                      <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3.5] opacity-60" />
+                      <Check className="w-3.5 h-3.5 sm:w-4 sm:h-4 stroke-[3.5] opacity-70" />
                     </div>
                   </div>
                 )}
@@ -140,9 +140,9 @@ export const BingoCardView: React.FC<BingoCardViewProps> = ({ card, currentNumbe
       </div>
 
       {/* Bottom Footer Details */}
-      <div className="flex items-center justify-between text-[10px] text-slate-400 mt-2.5 pt-2 border-t border-slate-800/70">
-        <span className="font-medium text-slate-400">Cartela Oficial 5x5</span>
-        <span className="text-amber-400/80 font-semibold">Custo R$ 1,00</span>
+      <div className="flex items-center justify-between text-[10px] text-slate-400 mt-2.5 pt-2 border-t border-slate-100">
+        <span className="font-medium text-slate-500">Cartela Oficial 5x5</span>
+        <span className="text-emerald-700 font-semibold">Custo R$ 1,00</span>
       </div>
     </div>
   );

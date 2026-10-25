@@ -142,7 +142,7 @@ const winnerHistory: StoredWinner[] = [
     patternName: 'Linha Horizontal #3',
     prizeAmount: 32.0,
     totalPot: 40.0,
-    pixKey: { type: 'cpf', key: '123.***.***-89', name: 'Luciana M. Silva' },
+    pixKey: { type: 'email', key: 'luciana.sp.mp@exemplo.com', name: 'Luciana M. Silva' },
     mercadoPagoPaymentId: 'MP-PIX-9823481239',
     mercadoPagoStatus: 'approved',
     timestamp: Date.now() - 180000,
@@ -156,7 +156,7 @@ const winnerHistory: StoredWinner[] = [
     patternName: 'Coluna Vertical #2',
     prizeAmount: 48.0,
     totalPot: 60.0,
-    pixKey: { type: 'phone', key: '(31) 9****-1234', name: 'Carlos E. Santos' },
+    pixKey: { type: 'email', key: 'carlos.mg.mp@exemplo.com', name: 'Carlos E. Santos' },
     mercadoPagoPaymentId: 'MP-PIX-9823489110',
     mercadoPagoStatus: 'approved',
     timestamp: Date.now() - 360000,
@@ -714,21 +714,21 @@ app.get('/api/user/profile', (req: Request, res: Response) => {
     id: 'user-me',
     name: 'Você (Jogador)',
     balance: 20.0,
-    pixKey: { type: 'cpf', key: '123.456.789-00', name: 'Jogador PixBingo' }
+    pixKey: { type: 'email', key: '', name: 'Jogador BingouPix' }
   };
   res.json(user);
 });
 
-// Update user Pix Key (CPF, Phone, Email, Random)
+// Update user Pix Key (Mercado Pago account E-mail strictly)
 app.post('/api/user/pix-key', (req: Request, res: Response) => {
-  const { type, key, name } = req.body;
-  if (!key || !type) {
-    return res.status(400).json({ error: 'Chave e tipo são obrigatórios' });
+  const { type = 'email', key, name } = req.body;
+  if (!key || typeof key !== 'string' || !key.includes('@')) {
+    return res.status(400).json({ error: 'Informe um e-mail válido cadastrado na sua conta Mercado Pago.' });
   }
 
   const user = users['user-me'];
   if (user) {
-    user.pixKey = { type, key, name: name || user.name };
+    user.pixKey = { type: 'email', key: key.trim().toLowerCase(), name: name || user.name };
   }
 
   res.json({ success: true, pixKey: user?.pixKey });
@@ -858,10 +858,64 @@ app.post('/api/webhooks/mercado-pago', async (req: Request, res: Response) => {
 
 app.post('/api/wallet/pix/payout', async (req: Request, res: Response) => {
   const { winnerName, pixKey, prizeAmount, roundId } = req.body || {};
-  if (!winnerName || !pixKey?.key || !Number.isFinite(Number(prizeAmount)) || Number(prizeAmount) <= 0) return res.status(400).json({ error: 'Dados do prêmio incompletos.' });
-  const result = await executeMercadoPagoPixPayout({ userId: 'user-me', userName: String(winnerName), isUser: true, cardId: `api-${roundId}`, patternType: 'full', patternName: 'Prêmio BingouPix', prizeAmount: Number(prizeAmount), totalPot: Number(prizeAmount), pixKey, mercadoPagoPaymentId: '', mercadoPagoStatus: 'in_process', timestamp: Date.now() });
+  if (!winnerName || !pixKey?.key || !Number.isFinite(Number(prizeAmount)) || Number(prizeAmount) <= 0) {
+    return res.status(400).json({ error: 'Dados do prêmio incompletos.' });
+  }
+  if (pixKey.type !== 'email' || typeof pixKey.key !== 'string' || !pixKey.key.includes('@')) {
+    return res.status(400).json({ error: 'Somente chave Pix do tipo e-mail cadastrada no Mercado Pago é aceita para pagamento do prêmio.' });
+  }
+
+  const result = await executeMercadoPagoPixPayout({
+    userId: 'user-me',
+    userName: String(winnerName),
+    isUser: true,
+    cardId: `api-${roundId}`,
+    patternType: 'full',
+    patternName: 'Prêmio BingouPix',
+    prizeAmount: Number(prizeAmount),
+    totalPot: Number(prizeAmount),
+    pixKey: { type: 'email', key: pixKey.key.trim().toLowerCase(), name: pixKey.name || winnerName },
+    mercadoPagoPaymentId: '',
+    mercadoPagoStatus: 'in_process',
+    timestamp: Date.now()
+  });
+
   if (result.status === 'failed') return res.status(502).json(result);
   return res.json({ paymentId: result.paymentId, status: result.status, timestamp: Date.now(), transactionHash: result.paymentId });
+});
+
+app.get('/api/wallet/pix/payout/status/:paymentId', async (req: Request, res: Response) => {
+  const paymentId = String(req.params.paymentId || '');
+  if (!paymentId) return res.status(400).json({ error: 'ID do pagamento não informado.' });
+
+  // Check locally cached payouts
+  for (const [_, record] of payouts.entries()) {
+    if (record.paymentId === paymentId) {
+      if (record.status !== 'in_process') {
+        return res.json({ status: record.status, paymentId });
+      }
+    }
+  }
+
+  // Attempt to query Mercado Pago API if configured
+  try {
+    const mpRes = await mercadoPagoRequest(`/v1/payouts/${encodeURIComponent(paymentId)}`);
+    const data = await mpRes.json().catch(() => ({}));
+    if (mpRes.ok && data) {
+      const status: 'approved' | 'in_process' | 'failed' =
+        data.status === 'approved' ? 'approved' : data.status === 'rejected' || data.status === 'failed' ? 'failed' : 'in_process';
+      for (const [k, v] of payouts.entries()) {
+        if (v.paymentId === paymentId) {
+          payouts.set(k, { ...v, status });
+        }
+      }
+      return res.json({ status, paymentId });
+    }
+  } catch {
+    // fallback
+  }
+
+  return res.json({ status: 'in_process', paymentId });
 });
 
 // System info / Mercado Pago status

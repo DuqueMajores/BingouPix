@@ -43,15 +43,25 @@ class BingoWebService {
     const devName = multiplayerSync.playerName;
 
     let savedKey: PixKey = {
-      type: 'cpf',
-      key: '123.456.789-00',
-      name: `Jogador ${devName}`,
+      type: 'email',
+      key: '',
+      name: '',
     };
     try {
       const stored = localStorage.getItem('bingoupix_user_v2');
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.pixKey) savedKey = parsed.pixKey;
+        if (parsed.pixKey) {
+          const rawKey = typeof parsed.pixKey.key === 'string' ? parsed.pixKey.key.trim() : '';
+          // Only preserve if it is a valid email
+          if (rawKey.includes('@')) {
+            savedKey = {
+              type: 'email',
+              key: rawKey.toLowerCase(),
+              name: parsed.pixKey.name || '',
+            };
+          }
+        }
       }
     } catch {
       // ignore
@@ -406,9 +416,11 @@ class BingoWebService {
               };
 
               const prizeAmount = this.round.prizePot;
-              const winnerPixKey = card.isUser
-                ? this.user.pixKey || { type: 'cpf', key: '123.456.789-00', name: card.userName }
-                : { type: 'cpf' as const, key: '987.654.321-00', name: card.userName };
+              const winnerPixKey: PixKey = card.isUser
+                ? (this.user.pixKey && this.user.pixKey.type === 'email' && this.user.pixKey.key?.includes('@')
+                    ? this.user.pixKey
+                    : { type: 'email', key: '', name: card.userName })
+                : { type: 'email', key: `${card.userName.toLowerCase().replace(/[^a-z0-9]/g, '')}@mercadopago.com`, name: card.userName };
 
               const winnerObj: WinnerInfo = {
                 userId: card.userId,
@@ -427,38 +439,67 @@ class BingoWebService {
 
               this.round.winner = winnerObj;
               this.round.status = 'finished';
-              this.round.waitingSecondsRemaining = 10;
+              this.round.waitingSecondsRemaining = 12;
 
               // Broadcast winner to other devices
               multiplayerSync.broadcast('WINNER', { winner: winnerObj });
 
-              // Execute Mercado Pago Pix payout
-              mercadoPagoService
-                .executePixPrizePayout(card.userName, winnerObj.pixKey, prizeAmount, this.round.id)
-                .then((payout) => {
-                  if (this.round.winner) {
-                    this.round.winner.mercadoPagoPaymentId = payout.paymentId;
-                    this.round.winner.mercadoPagoStatus = payout.status;
-                  }
-                  this.round.historyRounds.unshift({
-                    ...winnerObj,
-                    mercadoPagoPaymentId: payout.paymentId,
-                    mercadoPagoStatus: payout.status,
-                  });
-                  if (this.round.historyRounds.length > 20) this.round.historyRounds.pop();
-                  this.notifyRound();
+              if (!winnerPixKey.key || !winnerPixKey.key.includes('@')) {
+                winnerObj.mercadoPagoPaymentId = '';
+                winnerObj.mercadoPagoStatus = 'failed';
+                this.notifyRound();
 
-                  this.addChatMessageLocal({
-                    senderId: 'system',
-                    senderName: 'Mercado Pago Pix',
-                    senderAvatar: '💸',
-                    text: payout.status === 'failed'
-                      ? `Prêmio de R$ ${prizeAmount.toFixed(2)} aguardando repasse: ${payout.error || 'Mercado Pago não confirmou a transferência.'}`
-                      : `Prêmio de R$ ${prizeAmount.toFixed(2)} enviado ao Mercado Pago para repasse via Pix a ${winnerObj.userName}.`,
-                    isSystem: true,
-                    systemType: 'pix',
-                  });
+                this.addChatMessageLocal({
+                  senderId: 'system',
+                  senderName: 'Mercado Pago Pix',
+                  senderAvatar: '⚠️',
+                  text: `Atenção ${card.userName}: Cadastre sua chave Pix (E-mail Mercado Pago) para liberar o repasse de R$ ${prizeAmount.toFixed(2)}.`,
+                  isSystem: true,
+                  systemType: 'pix',
                 });
+              } else {
+                // Execute Mercado Pago Pix payout
+                mercadoPagoService
+                  .executePixPrizePayout(card.userName, winnerObj.pixKey, prizeAmount, this.round.id)
+                  .then((payout) => {
+                    if (this.round.winner) {
+                      this.round.winner.mercadoPagoPaymentId = payout.paymentId;
+                      this.round.winner.mercadoPagoStatus = payout.status;
+                    }
+                    this.round.historyRounds.unshift({
+                      ...winnerObj,
+                      mercadoPagoPaymentId: payout.paymentId,
+                      mercadoPagoStatus: payout.status,
+                    });
+                    if (this.round.historyRounds.length > 20) this.round.historyRounds.pop();
+                    this.notifyRound();
+
+                    // If in_process, check again after 4 seconds to confirm if it moved to approved
+                    if (payout.status === 'in_process' && payout.paymentId) {
+                      const checkId = payout.paymentId;
+                      setTimeout(async () => {
+                        const check = await mercadoPagoService.checkPayoutStatus(checkId);
+                        if (check && check.status !== 'in_process' && this.round.winner) {
+                          this.round.winner.mercadoPagoStatus = check.status;
+                          this.notifyRound();
+                        }
+                      }, 4000);
+                    }
+
+                    this.addChatMessageLocal({
+                      senderId: 'system',
+                      senderName: 'Mercado Pago Pix',
+                      senderAvatar: '💸',
+                      text: payout.status === 'failed'
+                        ? `Prêmio de R$ ${prizeAmount.toFixed(2)}: ${payout.error || 'Mercado Pago não confirmou a transferência. Verifique seu e-mail cadastrado.'}`
+                        : payout.status === 'in_process'
+                        ? `Prêmio de R$ ${prizeAmount.toFixed(2)} em processamento no Mercado Pago (aguardando liberação via Pix para ${winnerObj.pixKey.key}).`
+                        : `Prêmio de R$ ${prizeAmount.toFixed(2)} transferido com sucesso via Pix pelo Mercado Pago para ${winnerObj.userName}!`,
+                      isSystem: true,
+                      systemType: 'pix',
+                    });
+                  });
+              }
 
               this.addChatMessageLocal({
                 senderId: 'system',
@@ -539,9 +580,38 @@ class BingoWebService {
     return { success: true };
   }
 
-  public registerPixKey(pixKey: PixKey) {
-    this.user.pixKey = pixKey;
+  public async registerPixKey(pixKey: PixKey) {
+    this.user.pixKey = {
+      type: 'email',
+      key: pixKey.key.trim().toLowerCase(),
+      name: pixKey.name.trim(),
+    };
     this.saveUser();
+
+    // If current round winner is user and waiting for payout, trigger immediately!
+    if (this.round.winner && this.round.winner.isUser && this.round.winner.mercadoPagoStatus !== 'approved') {
+      const prizeAmount = this.round.winner.prizeAmount;
+      this.round.winner.pixKey = this.user.pixKey;
+      this.round.winner.mercadoPagoPaymentId = 'PROCESSANDO...';
+      this.round.winner.mercadoPagoStatus = 'in_process';
+      this.notifyRound();
+
+      try {
+        const payout = await mercadoPagoService.executePixPrizePayout(
+          this.user.name,
+          this.user.pixKey,
+          prizeAmount,
+          this.round.id
+        );
+        if (this.round.winner) {
+          this.round.winner.mercadoPagoPaymentId = payout.paymentId;
+          this.round.winner.mercadoPagoStatus = payout.status;
+          this.notifyRound();
+        }
+      } catch {
+        // ignore
+      }
+    }
   }
 
   public addDeposit(amount: number) {

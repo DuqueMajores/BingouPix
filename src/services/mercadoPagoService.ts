@@ -84,6 +84,22 @@ class MercadoPagoWebService {
     return data as PayoutResult;
   }
 
+  public async checkPayoutStatus(
+    paymentId: string,
+  ): Promise<{ status: 'approved' | 'in_process' | 'failed' }> {
+    if (!paymentId || paymentId === 'PROCESSANDO...' || paymentId.startsWith('PROCESSANDO')) {
+      return { status: 'in_process' };
+    }
+    try {
+      const response = await fetch(this.apiUrl(`/api/wallet/pix/payout/status/${encodeURIComponent(paymentId)}`));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) return { status: 'in_process' };
+      return data;
+    } catch {
+      return { status: 'in_process' };
+    }
+  }
+
   public getConfig(): MercadoPagoCredentials {
     return { publicKey: import.meta.env.VITE_MERCADO_PAGO_PUBLIC_KEY || '' };
   }
