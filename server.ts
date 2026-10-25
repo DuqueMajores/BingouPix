@@ -189,14 +189,27 @@ const users: Record<string, StoredUser> = {
   'user-me': {
     id: 'user-me',
     name: 'Você (Jogador)',
-    balance: 20.0, // Welcome credit
-    pixKey: {
-      type: 'cpf',
-      key: '123.456.789-00',
-      name: 'Jogador PixBingo'
-    }
+    balance: 0,
   }
 };
+
+function playerIdFromRequest(req: Request): string {
+  const raw = String(req.body?.userId || req.query.userId || 'user-me').trim();
+  return raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 64) || 'user-me';
+}
+
+function ensurePlayer(id: string, name?: string): StoredUser {
+  if (!users[id]) {
+    users[id] = {
+      id,
+      name: name?.trim() || `Jogador ${id.slice(-5)}`,
+      balance: 0,
+    };
+  } else if (name?.trim() && users[id].name.startsWith('Jogador ')) {
+    users[id].name = name.trim();
+  }
+  return users[id];
+}
 
 interface DepositRecord {
   id: string;
@@ -208,6 +221,70 @@ interface DepositRecord {
 
 const deposits = new Map<string, DepositRecord>();
 const payouts = new Map<string, { status: 'approved' | 'in_process' | 'failed'; paymentId: string }>();
+
+const stateDirectory = process.env.BINGO_DATA_DIR || path.join(__dirname, 'data');
+const stateFile = path.join(stateDirectory, 'state.json');
+
+interface PersistedState {
+  roundCounter: number;
+  roundStatus: 'waiting' | 'in_progress' | 'finished';
+  roundStartTime: number;
+  waitingSecondsRemaining: number;
+  ballDrawIntervalRemaining: number;
+  drawnNumbers: number[];
+  currentDrawnNumber: number | null;
+  activeCards: StoredCard[];
+  currentWinner: StoredWinner | null;
+  winnerHistory: StoredWinner[];
+  chatMessages: StoredMessage[];
+  users: Record<string, StoredUser>;
+  deposits: DepositRecord[];
+  payouts: Array<[string, { status: 'approved' | 'in_process' | 'failed', paymentId: string }] >;
+}
+
+function persistState() {
+  try {
+    fs.mkdirSync(stateDirectory, { recursive: true });
+    const state: PersistedState = {
+      roundCounter, roundStatus, roundStartTime, waitingSecondsRemaining,
+      ballDrawIntervalRemaining, drawnNumbers, currentDrawnNumber, activeCards,
+      currentWinner, winnerHistory, chatMessages, users,
+      deposits: [...deposits.values()], payouts: [...payouts.entries()],
+    };
+    const temporaryFile = `${stateFile}.tmp`;
+    fs.writeFileSync(temporaryFile, JSON.stringify(state), 'utf8');
+    fs.renameSync(temporaryFile, stateFile);
+  } catch (error) {
+    console.warn('Não foi possível persistir o estado do bingo:', error);
+  }
+}
+
+function loadPersistedState() {
+  try {
+    if (!fs.existsSync(stateFile)) return;
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8')) as Partial<PersistedState>;
+    if (typeof state.roundCounter === 'number') roundCounter = state.roundCounter;
+    if (state.roundStatus) roundStatus = state.roundStatus;
+    if (typeof state.roundStartTime === 'number') roundStartTime = state.roundStartTime;
+    if (typeof state.waitingSecondsRemaining === 'number') waitingSecondsRemaining = state.waitingSecondsRemaining;
+    if (typeof state.ballDrawIntervalRemaining === 'number') ballDrawIntervalRemaining = state.ballDrawIntervalRemaining;
+    if (Array.isArray(state.drawnNumbers)) drawnNumbers = state.drawnNumbers;
+    if (state.currentDrawnNumber !== undefined) currentDrawnNumber = state.currentDrawnNumber;
+    if (Array.isArray(state.activeCards)) activeCards = state.activeCards;
+    if (state.currentWinner !== undefined) currentWinner = state.currentWinner;
+    if (Array.isArray(state.winnerHistory)) winnerHistory.splice(0, winnerHistory.length, ...state.winnerHistory);
+    if (Array.isArray(state.chatMessages)) chatMessages.splice(0, chatMessages.length, ...state.chatMessages);
+    if (state.users) Object.assign(users, state.users);
+    if (Array.isArray(state.deposits)) state.deposits.forEach((deposit) => deposits.set(deposit.id, deposit));
+    if (Array.isArray(state.payouts)) state.payouts.forEach(([key, value]) => payouts.set(key, value));
+    console.log(`Estado do BingouPix restaurado de ${stateFile}`);
+  } catch (error) {
+    console.warn('Estado persistido inválido; iniciando estado limpo:', error);
+  }
+}
+
+loadPersistedState();
+setInterval(persistState, 2000);
 
 function mercadoPagoToken(): string {
   return (process.env.MERCADO_PAGO_ACCESS_TOKEN || '').trim();
@@ -486,10 +563,13 @@ function addChatMessage(msg: Omit<StoredMessage, 'id' | 'timestamp'>) {
 // ----------------------------------------------------
 // Central Bingo Engine Timer Tick (Runs every 1 second)
 // ----------------------------------------------------
-seedBotCards();
-
 setInterval(async () => {
   if (roundStatus === 'waiting') {
+    const realPlayerCount = new Set(activeCards.map((card) => card.userId)).size;
+    if (realPlayerCount < 2) {
+      waitingSecondsRemaining = 60;
+      return;
+    }
     waitingSecondsRemaining--;
 
     // Periodically post bot chat chatter during waiting period
@@ -518,11 +598,6 @@ setInterval(async () => {
       drawnNumbers = [];
       currentDrawnNumber = null;
       currentWinner = null;
-
-      // Ensure there are at least some cards
-      if (activeCards.length === 0) {
-        seedBotCards();
-      }
 
       const totalPot = activeCards.length * 1.0;
       const prizePot = Number((totalPot * 0.8).toFixed(2));
@@ -704,18 +779,13 @@ app.get('/api/game/state', (req: Request, res: Response) => {
     prizePot,
     winner: currentWinner,
     historyRounds: winnerHistory.slice(0, 10),
-    activePlayerCount: BOT_PLAYERS.length + 1 + Math.floor(Math.random() * 5),
+    activePlayerCount: new Set(activeCards.map((card) => card.userId)).size,
   });
 });
 
 // Get user profile & balance
 app.get('/api/user/profile', (req: Request, res: Response) => {
-  const user = users['user-me'] || {
-    id: 'user-me',
-    name: 'Você (Jogador)',
-    balance: 20.0,
-    pixKey: { type: 'email', key: '', name: 'Jogador BingouPix' }
-  };
+  const user = ensurePlayer(playerIdFromRequest(req), String(req.query.userName || ''));
   res.json(user);
 });
 
@@ -726,22 +796,20 @@ app.post('/api/user/pix-key', (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Informe um e-mail válido cadastrado na sua conta Mercado Pago.' });
   }
 
-  const user = users['user-me'];
-  if (user) {
-    user.pixKey = { type: 'email', key: key.trim().toLowerCase(), name: name || user.name };
-  }
+  const user = ensurePlayer(playerIdFromRequest(req), String(req.body?.userName || ''));
+  user.pixKey = { type: 'email', key: key.trim().toLowerCase(), name: name || user.name };
 
   res.json({ success: true, pixKey: user?.pixKey });
 });
 
 // Buy cards for current/next round
 app.post('/api/game/buy-cards', (req: Request, res: Response) => {
-  const { quantity = 1 } = req.body;
+  const { quantity = 1, userId, userName } = req.body;
   const qty = Math.max(1, Math.min(20, Number(quantity)));
   const cost = qty * 1.0; // R$ 1 per card
 
-  const user = users['user-me'];
-  if (!user || user.balance < cost) {
+  const user = ensurePlayer(String(userId || 'user-me'), String(userName || ''));
+  if (user.balance < cost) {
     return res.status(400).json({
       error: `Saldo insuficiente. Cada cartela custa R$ 1,00. Seu saldo atual é R$ ${(user?.balance || 0).toFixed(2)}.`
     });
@@ -774,7 +842,7 @@ app.post('/api/game/buy-cards', (req: Request, res: Response) => {
 
 // Get user cards for current round
 app.get('/api/game/my-cards', (req: Request, res: Response) => {
-  const userCards = activeCards.filter(c => c.isUser);
+  const userCards = activeCards.filter(c => c.userId === playerIdFromRequest(req));
   res.json({ cards: userCards });
 });
 
@@ -803,6 +871,8 @@ app.post('/api/chat/send', (req: Request, res: Response) => {
 // Mercado Pago Pix deposit generator. Production always uses the server-side token.
 app.post('/api/wallet/pix/deposit', async (req: Request, res: Response) => {
   const amount = Number(req.body?.amount);
+  const playerId = playerIdFromRequest(req);
+  ensurePlayer(playerId, String(req.body?.userName || ''));
   if (!Number.isFinite(amount) || amount < 1 || amount > 10000) return res.status(400).json({ error: 'Valor inválido. Informe um valor entre R$ 1,00 e R$ 10.000,00.' });
   if (!isProductionTokenConfigured()) return res.status(503).json({ error: 'Mercado Pago não está configurado com credencial de produção no servidor.' });
 
@@ -828,7 +898,7 @@ app.post('/api/wallet/pix/deposit', async (req: Request, res: Response) => {
     if (!mpRes.ok || !data.id || !data.point_of_interaction?.transaction_data?.qr_code) {
       return res.status(502).json({ error: data.message || 'Mercado Pago não criou o Pix.' });
     }
-    deposits.set(depositId, { id: depositId, paymentId: String(data.id), userId: 'user-me', amount: Number(amount.toFixed(2)), credited: false });
+    deposits.set(depositId, { id: depositId, paymentId: String(data.id), userId: playerId, amount: Number(amount.toFixed(2)), credited: false });
     const tx = data.point_of_interaction.transaction_data;
     const qrCode = tx.qr_code_base64 ? `data:image/png;base64,${tx.qr_code_base64}` : '';
     return res.json({ id: depositId, amount: Number(amount.toFixed(2)), status: data.status || 'pending', copyPaste: tx.qr_code, qrCode, qrCodeBase64: qrCode, mercadoPagoId: String(data.id), isSimulated: false, expiresAt: Date.now() + 30 * 60 * 1000 });

@@ -48,6 +48,7 @@ export interface BingoRound {
   drawnNumbers: number[];
   currentNumber: number | null;
   totalCards: number;
+  activePlayerCount?: number;
   potTotal: number; // Total collected (R$ 1 per card)
   prizePot: number; // 80% of potTotal
   winner: WinnerInfo | null;

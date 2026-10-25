@@ -26,6 +26,13 @@ class MercadoPagoWebService {
     return `${this.apiBaseUrl}${path}`;
   }
 
+  private playerIdentity() {
+    const userId = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem('bingoupix_device_player_id') || 'user-me'
+      : 'user-me';
+    return { userId, userName: typeof window !== 'undefined' ? window.sessionStorage.getItem('bingoupix_player_name') || undefined : undefined };
+  }
+
   public getMpInstance(): null {
     return null;
   }
@@ -38,7 +45,7 @@ class MercadoPagoWebService {
     const response = await fetch(this.apiUrl('/api/wallet/pix/deposit'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, payerEmail, payerName }),
+      body: JSON.stringify({ amount, payerEmail, payerName, ...this.playerIdentity() }),
     });
 
     const data = await response.json().catch(() => ({}));

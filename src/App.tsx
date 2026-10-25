@@ -54,7 +54,7 @@ export default function App() {
   useEffect(() => {
     const unsubRound = bingoWebService.subscribeRound((r) => {
       setRoundState(r);
-      setRealPlayersCount(bingoWebService.getRealPlayersCount());
+      setRealPlayersCount(r.activePlayerCount ?? bingoWebService.getRealPlayersCount());
 
       // Play audio and voice announcer on new ball
       if (r.currentNumber !== null && r.currentNumber !== lastDrawnNumberRef.current) {
@@ -73,7 +73,7 @@ export default function App() {
     const unsubUser = bingoWebService.subscribeUser((u) => setUser(u));
     const unsubCards = bingoWebService.subscribeCards((c) => {
       setUserCards(c);
-      setRealPlayersCount(bingoWebService.getRealPlayersCount());
+      setRealPlayersCount(bingoWebService.getRound().activePlayerCount ?? bingoWebService.getRealPlayersCount());
     });
 
     return () => {
@@ -86,7 +86,7 @@ export default function App() {
   // Handlers
   const handleBuyCards = async (quantity: number): Promise<boolean> => {
     const res = bingoWebService.buyCards(quantity);
-    setRealPlayersCount(bingoWebService.getRealPlayersCount());
+    setRealPlayersCount(bingoWebService.getRound().activePlayerCount ?? bingoWebService.getRealPlayersCount());
     return res.success;
   };
 

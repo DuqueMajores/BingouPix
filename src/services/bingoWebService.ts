@@ -32,36 +32,38 @@ class BingoWebService {
 
   constructor() {
     this.user = this.loadUser();
+    try { sessionStorage.setItem('bingoupix_player_name', this.user.name); } catch { /* private mode */ }
     this.round = this.initRound(1);
+    this.restoreLocalGameState();
     this.initChat();
     this.initMultiplayerSync();
     this.startEngine();
+    void this.syncBackendState();
+    window.setInterval(() => void this.syncBackendState(), 3000);
+  }
+
+  private apiUrl(path: string): string {
+    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+    return `${base}${path}`;
   }
 
   private loadUser(): UserProfile {
     const devId = multiplayerSync.playerId;
     const devName = multiplayerSync.playerName;
 
-    let savedKey: PixKey = {
-      type: 'email',
-      key: '',
-      name: '',
-    };
+    let savedKey: PixKey | undefined;
+    let savedBalance = 0;
+    let savedName = devName;
     try {
       const stored = localStorage.getItem('bingoupix_user_v2');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed.pixKey) {
-          const rawKey = typeof parsed.pixKey.key === 'string' ? parsed.pixKey.key.trim() : '';
-          // Only preserve if it is a valid email
-          if (rawKey.includes('@')) {
-            savedKey = {
-              type: 'email',
-              key: rawKey.toLowerCase(),
-              name: parsed.pixKey.name || '',
-            };
-          }
+          const rawKey = typeof parsed.pixKey.key === 'string' ? parsed.pixKey.key.trim().toLowerCase() : '';
+          if (rawKey.includes('@')) savedKey = { type: 'email', key: rawKey, name: parsed.pixKey.name || '' };
         }
+        if (typeof parsed.balance === 'number') savedBalance = parsed.balance;
+        if (typeof parsed.name === 'string' && parsed.name.trim()) savedName = parsed.name;
       }
     } catch {
       // ignore
@@ -69,10 +71,64 @@ class BingoWebService {
 
     return {
       id: devId,
-      name: devName,
-      balance: 0.0, // Reset to 0.00
+      name: savedName,
+      balance: savedBalance,
       pixKey: savedKey,
     };
+  }
+
+  private restoreLocalGameState() {
+    try {
+      const stored = localStorage.getItem('bingoupix_game_v2');
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (parsed.round) this.round = parsed.round as BingoRound;
+      if (Array.isArray(parsed.activeCards)) this.activeCards = parsed.activeCards as BingoCard[];
+    } catch {
+      // ignore corrupt browser state
+    }
+  }
+
+  private persistLocalGameState() {
+    try {
+      localStorage.setItem('bingoupix_game_v2', JSON.stringify({
+        round: this.round,
+        activeCards: this.activeCards,
+      }));
+    } catch {
+      // ignore storage quota/private mode errors
+    }
+  }
+
+  private async syncBackendState() {
+    if (!import.meta.env.VITE_API_BASE_URL) return;
+    try {
+      const [profileResponse, stateResponse, cardsResponse] = await Promise.all([
+        fetch(this.apiUrl(`/api/user/profile?userId=${encodeURIComponent(this.user.id)}&userName=${encodeURIComponent(this.user.name)}`)),
+        fetch(this.apiUrl('/api/game/state')),
+        fetch(this.apiUrl(`/api/game/my-cards?userId=${encodeURIComponent(this.user.id)}`)),
+      ]);
+      if (!profileResponse.ok || !stateResponse.ok || !cardsResponse.ok) return;
+      const profile = await profileResponse.json();
+      const state = await stateResponse.json();
+      const cards = await cardsResponse.json();
+      if (profile?.id) {
+        this.user = {
+          id: this.user.id,
+          name: profile.name || this.user.name,
+          balance: Number(profile.balance) || 0,
+          pixKey: profile.pixKey || this.user.pixKey,
+        };
+        this.saveUser();
+      }
+      if (state?.id) this.round = state as BingoRound;
+      if (Array.isArray(cards?.cards)) this.activeCards = cards.cards as BingoCard[];
+      this.persistLocalGameState();
+      this.notifyRound();
+      this.notifyCards();
+    } catch {
+      // Keep the last locally persisted state while the backend reconnects.
+    }
   }
 
   private saveUser() {
@@ -81,6 +137,7 @@ class BingoWebService {
     } catch {
       // ignore
     }
+    this.persistLocalGameState();
     this.notifyUser();
   }
 
@@ -570,6 +627,14 @@ class BingoWebService {
       roundId: this.round.id,
     });
 
+    void fetch(this.apiUrl('/api/game/buy-cards'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quantity, userId: this.user.id, userName: this.user.name }),
+    }).then(() => this.syncBackendState()).catch(() => {
+      // The local state remains available while the backend reconnects.
+    });
+
     this.addChatMessageLocal({
       senderId: this.user.id,
       senderName: this.user.name,
@@ -587,30 +652,17 @@ class BingoWebService {
       name: pixKey.name.trim(),
     };
     this.saveUser();
+    void fetch(this.apiUrl('/api/user/pix-key'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...this.user.pixKey, userId: this.user.id, userName: this.user.name }),
+    }).catch(() => {
+      // Keep the local value until the backend is reachable.
+    });
 
-    // If current round winner is user and waiting for payout, trigger immediately!
+    // If current round winner is user and waiting for payout, trigger immediately.
     if (this.round.winner && this.round.winner.isUser && this.round.winner.mercadoPagoStatus !== 'approved') {
-      const prizeAmount = this.round.winner.prizeAmount;
-      this.round.winner.pixKey = this.user.pixKey;
-      this.round.winner.mercadoPagoPaymentId = 'PROCESSANDO...';
-      this.round.winner.mercadoPagoStatus = 'in_process';
-      this.notifyRound();
-
-      try {
-        const payout = await mercadoPagoService.executePixPrizePayout(
-          this.user.name,
-          this.user.pixKey,
-          prizeAmount,
-          this.round.id
-        );
-        if (this.round.winner) {
-          this.round.winner.mercadoPagoPaymentId = payout.paymentId;
-          this.round.winner.mercadoPagoStatus = payout.status;
-          this.notifyRound();
-        }
-      } catch {
-        // ignore
-      }
+      void mercadoPagoService.executePixPrizePayout(this.user.name, this.user.pixKey, this.round.winner.prizeAmount, this.round.id);
     }
   }
 
