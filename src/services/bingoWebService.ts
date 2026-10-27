@@ -6,7 +6,7 @@
  */
 
 import { BingoRound, BingoCard, ChatMessage, PixKey, WinnerInfo } from '../types/bingo.ts';
-import { mercadoPagoService } from './mercadoPagoService.ts';
+import { apiFetch } from './apiSession.ts';
 import { multiplayerSync, SyncMessage } from './multiplayerSync.ts';
 
 export interface UserProfile {
@@ -14,6 +14,17 @@ export interface UserProfile {
   name: string;
   balance: number;
   pixKey?: PixKey;
+}
+
+export interface WalletWithdrawal {
+  id: string;
+  amountCents: number;
+  status: 'preparing' | 'in_process' | 'approved' | 'failed';
+  paymentId: string;
+  error?: string;
+  createdAt: number;
+  balance: number;
+  pixKey: PixKey;
 }
 
 type Listener<T> = (data: T) => void;
@@ -24,6 +35,7 @@ class BingoWebService {
   private activeCards: BingoCard[] = [];
   private chatMessages: ChatMessage[] = [];
   private timer: number | null = null;
+  private pendingCardPurchase: { quantity: number; requestId: string } | null = null;
 
   private roundListeners: Set<Listener<BingoRound>> = new Set();
   private userListeners: Set<Listener<UserProfile>> = new Set();
@@ -32,6 +44,10 @@ class BingoWebService {
 
   constructor() {
     this.user = this.loadUser();
+    try {
+      const pending = JSON.parse(sessionStorage.getItem('bingoupix_pending_card_purchase_v1') || 'null');
+      if (Number.isInteger(pending?.quantity) && typeof pending?.requestId === 'string') this.pendingCardPurchase = pending;
+    } catch { /* private mode or malformed cache; server remains authoritative */ }
     try { sessionStorage.setItem('bingoupix_player_name', this.user.name); } catch { /* private mode */ }
     this.round = this.initRound(1);
     this.initChat();
@@ -40,71 +56,27 @@ class BingoWebService {
     window.setInterval(() => void this.syncBackendState(), 1000);
   }
 
-  private apiUrl(path: string): string {
-    const base = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-    return `${base}${path}`;
-  }
-
   private loadUser(): UserProfile {
-    const devId = multiplayerSync.playerId;
-    const devName = multiplayerSync.playerName;
-
-    let savedKey: PixKey | undefined;
-    let savedBalance = 0;
-    let savedName = devName;
+    // Profile, balance and Pix details are deliberately never read from browser storage.
     try {
-      const stored = localStorage.getItem('bingoupix_user_v2');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        if (parsed.pixKey) {
-          const rawKey = typeof parsed.pixKey.key === 'string' ? parsed.pixKey.key.trim().toLowerCase() : '';
-          if (rawKey.includes('@')) savedKey = { type: 'email', key: rawKey, name: parsed.pixKey.name || '' };
-        }
-        if (typeof parsed.balance === 'number') savedBalance = parsed.balance;
-        if (typeof parsed.name === 'string' && parsed.name.trim()) savedName = parsed.name;
-      }
-    } catch {
-      // ignore
-    }
-
+      localStorage.removeItem('bingoupix_user_v2');
+      localStorage.removeItem('bingoupix_game_v2');
+    } catch { /* private mode */ }
     return {
-      id: devId,
-      name: savedName,
-      balance: savedBalance,
-      pixKey: savedKey,
+      id: multiplayerSync.playerId,
+      name: multiplayerSync.playerName,
+      balance: 0,
+      pixKey: undefined,
     };
-  }
-
-  private restoreLocalGameState() {
-    try {
-      const stored = localStorage.getItem('bingoupix_game_v2');
-      if (!stored) return;
-      const parsed = JSON.parse(stored);
-      if (parsed.round) this.round = parsed.round as BingoRound;
-      if (Array.isArray(parsed.activeCards)) this.activeCards = parsed.activeCards as BingoCard[];
-    } catch {
-      // ignore corrupt browser state
-    }
-  }
-
-  private persistLocalGameState() {
-    try {
-      localStorage.setItem('bingoupix_game_v2', JSON.stringify({
-        round: this.round,
-        activeCards: this.activeCards,
-      }));
-    } catch {
-      // ignore storage quota/private mode errors
-    }
   }
 
   private async syncBackendState() {
     if (!import.meta.env.VITE_API_BASE_URL) return;
     try {
       const [profileResponse, stateResponse, cardsResponse] = await Promise.all([
-        fetch(this.apiUrl(`/api/user/profile?userId=${encodeURIComponent(this.user.id)}&userName=${encodeURIComponent(this.user.name)}`)),
-        fetch(this.apiUrl('/api/game/state')),
-        fetch(this.apiUrl(`/api/game/my-cards?userId=${encodeURIComponent(this.user.id)}`)),
+        apiFetch('/api/user/profile', {}, this.user.name),
+        apiFetch('/api/game/state', {}, this.user.name),
+        apiFetch('/api/game/my-cards', {}, this.user.name),
       ]);
       if (!profileResponse.ok || !stateResponse.ok || !cardsResponse.ok) return;
       const profile = await profileResponse.json();
@@ -112,30 +84,24 @@ class BingoWebService {
       const cards = await cardsResponse.json();
       if (profile?.id) {
         this.user = {
-          id: this.user.id,
+          id: profile.id,
           name: profile.name || this.user.name,
           balance: Number(profile.balance) || 0,
-          pixKey: profile.pixKey || this.user.pixKey,
+          pixKey: profile.pixKey || undefined,
         };
         this.saveUser();
       }
       if (state?.id) this.round = state as BingoRound;
       if (Array.isArray(cards?.cards)) this.activeCards = cards.cards as BingoCard[];
-      this.persistLocalGameState();
       this.notifyRound();
       this.notifyCards();
     } catch {
-      // Keep the last locally persisted state while the backend reconnects.
+      // Keep only the last in-memory server response; never persist wallet data locally.
     }
   }
 
   private saveUser() {
-    try {
-      localStorage.setItem('bingoupix_user_v2', JSON.stringify(this.user));
-    } catch {
-      // ignore
-    }
-    this.persistLocalGameState();
+    // The profile and game state remain server-authoritative and are not cached locally.
     this.notifyUser();
   }
 
@@ -427,7 +393,7 @@ class BingoWebService {
                 ? (this.user.pixKey && this.user.pixKey.type === 'email' && this.user.pixKey.key?.includes('@')
                     ? this.user.pixKey
                     : { type: 'email', key: '', name: card.userName })
-                : { type: 'email', key: `${card.userName.toLowerCase().replace(/[^a-z0-9]/g, '')}@mercadopago.com`, name: card.userName };
+                : { type: 'email', key: '', name: card.userName };
 
               const winnerObj: WinnerInfo = {
                 userId: card.userId,
@@ -451,62 +417,7 @@ class BingoWebService {
               // Broadcast winner to other devices
               multiplayerSync.broadcast('WINNER', { winner: winnerObj });
 
-              if (!winnerPixKey.key || !winnerPixKey.key.includes('@')) {
-                winnerObj.mercadoPagoPaymentId = '';
-                winnerObj.mercadoPagoStatus = 'failed';
-                this.notifyRound();
-
-                this.addChatMessageLocal({
-                  senderId: 'system',
-                  senderName: 'Mercado Pago Pix',
-                  senderAvatar: '⚠️',
-                  text: `Atenção ${card.userName}: Cadastre sua chave Pix (E-mail Mercado Pago) para liberar o repasse de R$ ${prizeAmount.toFixed(2)}.`,
-                  isSystem: true,
-                  systemType: 'pix',
-                });
-              } else {
-                // Execute Mercado Pago Pix payout
-                mercadoPagoService
-                  .executePixPrizePayout(card.userName, winnerObj.pixKey, prizeAmount, this.round.id)
-                  .then((payout) => {
-                    if (this.round.winner) {
-                      this.round.winner.mercadoPagoPaymentId = payout.paymentId;
-                      this.round.winner.mercadoPagoStatus = payout.status;
-                    }
-                    this.round.historyRounds.unshift({
-                      ...winnerObj,
-                      mercadoPagoPaymentId: payout.paymentId,
-                      mercadoPagoStatus: payout.status,
-                    });
-                    if (this.round.historyRounds.length > 20) this.round.historyRounds.pop();
-                    this.notifyRound();
-
-                    // If in_process, check again after 4 seconds to confirm if it moved to approved
-                    if (payout.status === 'in_process' && payout.paymentId) {
-                      const checkId = payout.paymentId;
-                      setTimeout(async () => {
-                        const check = await mercadoPagoService.checkPayoutStatus(checkId);
-                        if (check && check.status !== 'in_process' && this.round.winner) {
-                          this.round.winner.mercadoPagoStatus = check.status;
-                          this.notifyRound();
-                        }
-                      }, 4000);
-                    }
-
-                    this.addChatMessageLocal({
-                      senderId: 'system',
-                      senderName: 'Mercado Pago Pix',
-                      senderAvatar: '💸',
-                      text: payout.status === 'failed'
-                        ? `Prêmio de R$ ${prizeAmount.toFixed(2)}: ${payout.error || 'Mercado Pago não confirmou a transferência. Verifique seu e-mail cadastrado.'}`
-                        : payout.status === 'in_process'
-                        ? `Prêmio de R$ ${prizeAmount.toFixed(2)} em processamento no Mercado Pago (aguardando liberação via Pix para ${winnerObj.pixKey.key}).`
-                        : `Prêmio de R$ ${prizeAmount.toFixed(2)} transferido com sucesso via Pix pelo Mercado Pago para ${winnerObj.userName}!`,
-                      isSystem: true,
-                      systemType: 'pix',
-                    });
-                  });
-              }
+              // Real payouts are initiated only by the authoritative backend game engine.
 
               this.addChatMessageLocal({
                 senderId: 'system',
@@ -552,29 +463,53 @@ class BingoWebService {
   }
 
   // Public Actions
+  private savePendingCardPurchase() {
+    try {
+      if (this.pendingCardPurchase) sessionStorage.setItem('bingoupix_pending_card_purchase_v1', JSON.stringify(this.pendingCardPurchase));
+      else sessionStorage.removeItem('bingoupix_pending_card_purchase_v1');
+    } catch { /* request remains protected by in-memory ID for this page session */ }
+  }
+
   public async buyCards(quantity: number): Promise<{ success: boolean; error?: string }> {
     const cost = quantity * 1.0;
-    if (this.user.balance < cost) {
+    if (this.pendingCardPurchase && this.pendingCardPurchase.quantity !== quantity) {
+      return { success: false, error: 'Há uma compra anterior sem confirmação. Tente novamente a mesma quantidade para consultar o resultado antes de iniciar outra compra.' };
+    }
+    if (!this.pendingCardPurchase && this.user.balance < cost) {
       return { success: false, error: 'Saldo insuficiente. Recarregue via Pix.' };
     }
 
+    if (!this.pendingCardPurchase) {
+      this.pendingCardPurchase = { quantity, requestId: crypto.randomUUID() };
+      this.savePendingCardPurchase();
+    }
     try {
-      const response = await fetch(this.apiUrl('/api/game/buy-cards'), {
+      const response = await apiFetch('/api/game/buy-cards', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity, userId: this.user.id, userName: this.user.name }),
-      });
+        body: JSON.stringify({ quantity, requestId: this.pendingCardPurchase.requestId }),
+      }, this.user.name);
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) return { success: false, error: data.error || 'Não foi possível comprar a cartela.' };
+      if (!response.ok || !data.success) {
+        if (response.status < 500) {
+          this.pendingCardPurchase = null;
+          this.savePendingCardPurchase();
+        }
+        return { success: false, error: data.error || 'Não foi possível comprar a cartela.' };
+      }
+      this.pendingCardPurchase = null;
+      this.savePendingCardPurchase();
       this.user.balance = Number(data.newBalance) || 0;
-      this.activeCards = Array.isArray(data.boughtCards)
-        ? [...this.activeCards, ...data.boughtCards]
-        : this.activeCards;
+      if (Array.isArray(data.boughtCards)) {
+        const cards = new Map([...this.activeCards, ...data.boughtCards].map((card: BingoCard) => [card.id, card]));
+        this.activeCards = [...cards.values()];
+      }
       this.saveUser();
       this.notifyCards();
       void this.syncBackendState();
     } catch {
-      return { success: false, error: 'Servidor indisponível. Tente novamente.' };
+      // Keep the same request ID so retrying cannot debit/issue a second purchase.
+      return { success: false, error: 'Servidor indisponível. Tente novamente a mesma compra.' };
     }
 
     this.addChatMessageLocal({
@@ -587,39 +522,60 @@ class BingoWebService {
     return { success: true };
   }
 
-  public async registerPixKey(pixKey: PixKey) {
-    this.user.pixKey = {
-      type: 'email',
-      key: pixKey.key.trim().toLowerCase(),
-      name: pixKey.name.trim(),
-    };
-    this.saveUser();
-    void fetch(this.apiUrl('/api/user/pix-key'), {
+  public async registerPixKey(pixKey: PixKey): Promise<void> {
+    const response = await apiFetch('/api/user/pix-key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...this.user.pixKey, userId: this.user.id, userName: this.user.name }),
-    }).catch(() => {
-      // Keep the local value until the backend is reachable.
-    });
-
-    // If current round winner is user and waiting for payout, trigger immediately.
-    if (this.round.winner && this.round.winner.isUser && this.round.winner.mercadoPagoStatus !== 'approved') {
-      void mercadoPagoService.executePixPrizePayout(this.user.name, this.user.pixKey, this.round.winner.prizeAmount, this.round.id);
-    }
+      body: JSON.stringify({ type: 'email', key: pixKey.key.trim().toLowerCase(), name: pixKey.name.trim() }),
+    }, this.user.name);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Falha ao registrar a chave Pix.');
+    this.user.pixKey = data.pixKey as PixKey;
+    this.saveUser();
   }
 
-  public addDeposit(amount: number) {
-    this.user.balance = Number((this.user.balance + amount).toFixed(2));
-    this.saveUser();
+  public async requestWithdrawal(amount: number, requestId: string): Promise<WalletWithdrawal> {
+    const response = await apiFetch('/api/wallet/pix/withdraw', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount, requestId }),
+    }, this.user.name);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok && !data.withdrawal) throw new Error(data.error || 'Não foi possível solicitar o saque.');
+    const withdrawal = data.withdrawal as WalletWithdrawal;
+    if (withdrawal && Number.isFinite(withdrawal.balance)) {
+      this.user.balance = withdrawal.balance;
+      this.saveUser();
+    }
+    return withdrawal;
+  }
 
-    this.addChatMessageLocal({
-      senderId: 'system',
-      senderName: 'Mercado Pago Pix',
-      senderAvatar: '💳',
-      text: `Depósito Pix de R$ ${amount.toFixed(2)} aprovado no Mercado Pago! Saldo atualizado.`,
-      isSystem: true,
-      systemType: 'pix',
-    });
+  public async checkWithdrawalStatus(withdrawalId: string): Promise<WalletWithdrawal> {
+    const response = await apiFetch(`/api/wallet/pix/withdraw/${encodeURIComponent(withdrawalId)}`, {}, this.user.name);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Não foi possível consultar o saque.');
+    const withdrawal = data.withdrawal as WalletWithdrawal;
+    if (withdrawal && Number.isFinite(withdrawal.balance)) {
+      this.user.balance = withdrawal.balance;
+      this.saveUser();
+    }
+    return withdrawal;
+  }
+
+  public async getActiveWithdrawal(): Promise<WalletWithdrawal | null> {
+    const response = await apiFetch('/api/wallet/pix/withdrawals/current', {}, this.user.name);
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data.error || 'Não foi possível recuperar o saque.');
+    const withdrawal = data.withdrawal as WalletWithdrawal | null;
+    if (withdrawal && Number.isFinite(withdrawal.balance)) {
+      this.user.balance = withdrawal.balance;
+      this.saveUser();
+    }
+    return withdrawal || null;
+  }
+
+  public async refreshBackendState(): Promise<void> {
+    await this.syncBackendState();
   }
 
   public addChatMessage(msg: Omit<ChatMessage, 'id' | 'timestamp'>) {

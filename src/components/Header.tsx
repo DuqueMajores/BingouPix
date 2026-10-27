@@ -1,5 +1,5 @@
 import React from 'react';
-import { Volume2, VolumeX, Smartphone, Monitor, Plus, Key, Users, BookOpen } from 'lucide-react';
+import { Volume2, VolumeX, Smartphone, Monitor, Plus, Key, Users, BookOpen, ArrowDownToLine } from 'lucide-react';
 import { soundManager } from '../utils/audio.ts';
 import { PixKey } from '../types/bingo.ts';
 
@@ -11,6 +11,7 @@ interface HeaderProps {
   isMobileFrame: boolean;
   onToggleMobileFrame: () => void;
   onOpenDeposit: () => void;
+  onOpenWithdraw: () => void;
   onOpenPixKey: () => void;
   onOpenHistory: () => void;
   onOpenInfo: () => void;
@@ -25,6 +26,7 @@ export const Header: React.FC<HeaderProps> = ({
   isMobileFrame,
   onToggleMobileFrame,
   onOpenDeposit,
+  onOpenWithdraw,
   onOpenPixKey,
   onOpenHistory,
   onOpenInfo,
@@ -86,6 +88,14 @@ export const Header: React.FC<HeaderProps> = ({
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" />
               <span className="hidden xs:inline">Pix</span>
+            </button>
+            <button
+              onClick={onOpenWithdraw}
+              title="Solicitar saque Pix"
+              className="ml-1 flex items-center gap-1 bg-sky-600 hover:bg-sky-500 active:scale-95 text-white text-xs font-bold px-2.5 py-1.5 rounded-lg shadow-sm shadow-sky-600/30 transition-all cursor-pointer"
+            >
+              <ArrowDownToLine className="w-3.5 h-3.5" />
+              <span className="hidden xs:inline">Sacar</span>
             </button>
           </div>
 

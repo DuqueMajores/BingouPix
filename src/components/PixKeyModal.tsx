@@ -21,7 +21,7 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
     currentPixKey?.type === 'email' && currentPixKey?.key ? currentPixKey.key : ''
   );
   // Without automatic prefilling for the holder name: starts empty
-  const [name, setName] = useState('');
+  const [name, setName] = useState(currentPixKey?.name || '');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
@@ -30,8 +30,9 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
   useEffect(() => {
     if (currentPixKey?.key && currentPixKey.type === 'email') {
       setEmailKey(currentPixKey.key);
+      setName(currentPixKey.name || '');
     }
-  }, [currentPixKey]);
+  }, [currentPixKey?.key, currentPixKey?.name, currentPixKey?.type]);
 
   if (!isOpen) return null;
 
@@ -58,23 +59,18 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
     }
 
     setLoading(true);
-    const ok = await onSavePixKey({
-      type: 'email',
-      key: cleanEmail,
-      name: name.trim(),
-    });
-    setLoading(false);
-
-    if (ok) {
+    try {
+      const ok = await onSavePixKey({ type: 'email', key: cleanEmail, name: name.trim() });
+      if (!ok) throw new Error('Falha ao registrar a chave Pix. Tente novamente.');
       setSuccess(true);
       setTimeout(() => {
         setSuccess(false);
-        if (!isUserWinner) {
-          onClose();
-        }
+        if (!isUserWinner) onClose();
       }, 1400);
-    } else {
-      setErrorMsg('Falha ao registrar a chave Pix. Tente novamente.');
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : 'Falha ao registrar a chave Pix. Tente novamente.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -96,10 +92,10 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
           </div>
           <div>
             <h3 className="text-lg font-bold font-['Outfit'] text-slate-900">
-              Chave Pix para Prêmios
+              Chave Pix para Recebimentos
             </h3>
             <p className="text-xs text-slate-500">
-              E-mail da sua conta Mercado Pago para recebimento automático do prêmio.
+              E-mail cadastrado no Mercado Pago para solicitar saques do seu saldo.
             </p>
           </div>
         </div>
@@ -125,11 +121,15 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
                   ? 'bg-sky-100 text-sky-800 border border-sky-300 animate-pulse'
                   : 'bg-rose-100 text-rose-800 border border-rose-300'
               }`}>
-                {payoutStatus === 'approved' ? '✓ Concluído' : payoutStatus === 'in_process' ? '⏳ Em Processamento' : 'Pendente'}
+                {currentWinner.walletCreditStatus === 'credited' ? '✓ No seu saldo' : currentWinner.walletCreditStatus === 'pending' ? '⏳ Creditando' : payoutStatus === 'approved' ? '✓ Concluído' : payoutStatus === 'in_process' ? '⏳ Em Processamento' : 'Pendente'}
               </span>
             </div>
             <p className="text-[11px] leading-relaxed text-slate-700">
-              {payoutStatus === 'approved'
+              {currentWinner.walletCreditStatus === 'credited'
+                ? `O prêmio foi creditado ao saldo da sua conta. Solicite um saque Pix quando desejar.`
+                : currentWinner.walletCreditStatus === 'pending'
+                ? 'O servidor está registrando o prêmio no saldo desta conta.'
+                : payoutStatus === 'approved'
                 ? `O pagamento foi liberado pelo Mercado Pago e transferido para a sua conta Pix vinculada ao e-mail ${currentWinner.pixKey.key}.`
                 : payoutStatus === 'in_process'
                 ? `A ordem foi enviada ao Mercado Pago (ID: ${currentWinner.mercadoPagoPaymentId || 'em processamento'}). O pagamento está em análise e será concluído via Pix.`
@@ -138,11 +138,11 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
           </div>
         )}
 
-        {/* 3-Step Lifecycle Visualizer - Refined & Balanced Layout */}
-        <div className="mb-5 bg-slate-50/90 rounded-2xl border border-slate-200 p-4 space-y-3">
+        {/* Legacy payout progress only for winners from the previous automatic-transfer flow */}
+        {currentWinner && !currentWinner.walletCreditStatus && <div className="mb-5 bg-slate-50/90 rounded-2xl border border-slate-200 p-4 space-y-3">
           <div className="flex items-center justify-between text-xs text-slate-600">
             <span className="font-bold text-slate-800 tracking-tight">
-              Etapas do Pagamento do Vencedor
+              Progresso do repasse legado
             </span>
             <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200/80">
               Mercado Pago Pix
@@ -246,7 +246,7 @@ export const PixKeyModal: React.FC<PixKeyModalProps> = ({
               </p>
             </div>
           </div>
-        </div>
+        </div>}
 
         {/* Pix Email Registration Form */}
         <form onSubmit={handleSave} className="space-y-4">

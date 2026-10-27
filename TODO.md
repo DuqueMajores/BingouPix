@@ -1,0 +1,15 @@
+# TODO — BingouPix
+
+- [x] **Crédito do prêmio por ID:** quando um jogador real vence, o backend credita o prêmio ao saldo do ID daquele jogador, com referência idempotente. Teste mock local confirmou uma única aplicação e recuperação após reinícios.
+- [x] **Compras e saldo resistente a retries:** uma compra recebe UUID, ordem durável e cartelas pré-geradas; retry retorna as mesmas cartelas e não debita de novo. Teste local confirmou retry e recuperação de ordem `preparing` após restart.
+- [x] **Falha fechada do ledger:** inicialização bloqueia se snapshot versionado não tiver ledger, ou se a sequência tiver lacuna. Teste local confirmou bloqueio com ledger ausente; saldo não é zerado silenciosamente.
+- [x] **Pote coberto por cartelas pagas:** cálculo do pote/prêmio e contagem de participantes usa apenas cartelas de jogadores reais pagantes, não bots. Teste local confirmou R$ 3,00 de pote e R$ 2,40 de prêmio para três cartelas pagas.
+- [ ] **Persistência no Render:** o pedido foi que o saldo “não pode ser apagado ou resetado de jeito nenhum pelo backend ou render”. O código exige `BINGO_DATA_DIR`, falha fechado para perda isolada de snapshot/ledger e requer volume persistente; falta confirmar o mount real do Persistent Disk e configurar backups. Nenhum código restaura dados se o provedor/aplicador apagar o volume inteiro.
+- [x] **Saque Pix:** interface e API autenticada permitem solicitar a partir de R$ 1,00 para o e-mail Pix cadastrado; reservam saldo, usam idempotência, acompanham a transação e devolvem somente em falha definitiva. Testes com mock validaram aprovação, rejeição/reembolso, pendência ambígua, reinício e credenciais TEST; nenhuma transferência real foi enviada.
+- [ ] **Ativar saques reais:** configurar Access Token APP_USR autorizado, chave privada Ed25519 nos secrets do Render, chave pública cadastrada no Mercado Pago, permissão Payouts, Persistent Disk e backup. Consulte `PAYOUTS_SETUP.md`; aprovação real depende da conta e não foi testada.
+- [x] **Build local:** `VITE_API_BASE_URL=https://bingoupix.onrender.com npm run build` e `npm run lint` concluíram; workflow GitHub Pages constrói de novo com a mesma URL.
+- [ ] **Deploy GitHub/Render:** o push de commit para `main` publica GitHub Pages pelo workflow, mas ainda requer revisão final/confirmar push. O workflow não publica Render; a auto-publicação do backend e o disco Render não foram verificados.
+- [x] **Chave Pix única:** o mesmo e-mail não pode ser cadastrado em diferentes IDs; regra e teste local.
+- [ ] **E-mail do pagador de depósito:** o app não tem um e-mail de cadastro separado; `payer.email` usa o e-mail Pix. Se for necessário um e-mail distinto, criar cadastro/validação antes de alegar que é o e-mail cadastrado do jogador.
+- [ ] **Recuperação/identidade da conta:** o sistema ainda usa sessão anônima; apagar o token no navegador impede recuperar o ID/saldo e não há verificação de e-mail/login. Uma solução de recuperação exige implementar cadastro e verificação.
+- [x] **Chat autenticado:** remetente vem da sessão assinada e não do cliente; envio sem sessão retorna 401.

@@ -1,15 +1,8 @@
-import { PixKey, PixPaymentInfo } from '../types/bingo.ts';
+import { PixPaymentInfo } from '../types/bingo.ts';
+import { apiFetch } from './apiSession.ts';
 
 export interface MercadoPagoCredentials {
   publicKey: string;
-}
-
-export interface PayoutResult {
-  paymentId: string;
-  status: 'approved' | 'in_process' | 'failed';
-  timestamp: number;
-  transactionHash: string;
-  error?: string;
 }
 
 /**
@@ -17,35 +10,15 @@ export interface PayoutResult {
  * O Access Token nunca deve chegar ao navegador, ao localStorage ou ao bundle.
  */
 class MercadoPagoWebService {
-  private readonly apiBaseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-
-  private apiUrl(path: string): string {
-    if (!this.apiBaseUrl && typeof window !== 'undefined' && window.location.hostname.endsWith('github.io')) {
-      throw new Error('Backend Render não configurado no build do frontend. Defina RENDER_BACKEND_URL no GitHub Actions e publique novamente.');
-    }
-    return `${this.apiBaseUrl}${path}`;
-  }
-
-  private playerIdentity() {
-    const userId = typeof window !== 'undefined'
-      ? window.sessionStorage.getItem('bingoupix_device_player_id') || 'user-me'
-      : 'user-me';
-    return { userId, userName: typeof window !== 'undefined' ? window.sessionStorage.getItem('bingoupix_player_name') || undefined : undefined };
-  }
-
   public getMpInstance(): null {
     return null;
   }
 
-  public async createPixDeposit(
-    amount: number,
-    payerEmail?: string,
-    payerName?: string,
-  ): Promise<PixPaymentInfo> {
-    const response = await fetch(this.apiUrl('/api/wallet/pix/deposit'), {
+  public async createPixDeposit(amount: number): Promise<PixPaymentInfo> {
+    const response = await apiFetch('/api/wallet/pix/deposit', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ amount, payerEmail, payerName, ...this.playerIdentity() }),
+      body: JSON.stringify({ amount }),
     });
 
     const data = await response.json().catch(() => ({}));
@@ -58,37 +31,13 @@ class MercadoPagoWebService {
   public async checkPaymentStatus(
     paymentId: string,
     _isSimulated = false,
-  ): Promise<{ status: 'approved' | 'pending' | 'rejected' }> {
+  ): Promise<{ status: 'approved' | 'pending' | 'rejected'; balance?: number }> {
     if (!paymentId) return { status: 'pending' };
 
-    const response = await fetch(this.apiUrl(`/api/wallet/pix/status/${encodeURIComponent(paymentId)}`));
+    const response = await apiFetch(`/api/wallet/pix/status/${encodeURIComponent(paymentId)}`);
     const data = await response.json().catch(() => ({}));
     if (!response.ok) return { status: 'pending' };
     return data;
-  }
-
-  public async executePixPrizePayout(
-    winnerName: string,
-    pixKey: PixKey,
-    prizeAmount: number,
-    roundId: number,
-  ): Promise<PayoutResult> {
-    const response = await fetch(this.apiUrl('/api/wallet/pix/payout'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ winnerName, pixKey, prizeAmount, roundId }),
-    });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      return {
-        paymentId: '',
-        status: 'failed',
-        timestamp: Date.now(),
-        transactionHash: '',
-        error: data.error || 'O Mercado Pago não confirmou o repasse.',
-      };
-    }
-    return data as PayoutResult;
   }
 
   public async checkPayoutStatus(
@@ -98,7 +47,7 @@ class MercadoPagoWebService {
       return { status: 'in_process' };
     }
     try {
-      const response = await fetch(this.apiUrl(`/api/wallet/pix/payout/status/${encodeURIComponent(paymentId)}`));
+      const response = await apiFetch(`/api/wallet/pix/payout/status/${encodeURIComponent(paymentId)}`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return { status: 'in_process' };
       return data;

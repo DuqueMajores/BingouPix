@@ -68,7 +68,7 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
 
   // Poll payout status while in_process
   useEffect(() => {
-    if (!winner || currentStatus !== 'in_process' || !winner.mercadoPagoPaymentId) return;
+    if (!winner || winner.walletCreditStatus || currentStatus !== 'in_process' || !winner.mercadoPagoPaymentId) return;
     if (winner.mercadoPagoPaymentId.startsWith('PROCESSANDO')) return;
 
     const interval = setInterval(async () => {
@@ -126,15 +126,33 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
         {/* Prize Box */}
         <div className="my-3 py-3 px-4 sm:py-4 sm:px-5 rounded-2xl bg-gradient-to-r from-amber-50 via-emerald-50/60 to-amber-50 border border-amber-200">
           <span className="text-[10px] sm:text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-            PRÊMIO TOTAL LIQUIDADO VIA PIX
+            {winner.walletCreditStatus ? 'PRÊMIO CREDITADO NA CARTEIRA' : 'PRÊMIO TOTAL LIQUIDADO VIA PIX'}
           </span>
           <div className="text-3xl sm:text-4xl font-black text-emerald-700 font-['Outfit'] tabular-nums my-1">
             R$ {winner.prizeAmount.toFixed(2)}
           </div>
         </div>
 
-        {/* 3-Step Lifecycle Progress Tracker for the Winner */}
-        <div className="mb-4 text-left bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
+        {winner.walletCreditStatus === 'credited' && (
+          <div className="my-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-left text-emerald-900">
+            <div className="flex items-center gap-2 font-bold text-sm"><CheckCircle2 className="w-5 h-5 text-emerald-600" /> Prêmio adicionado ao seu saldo</div>
+            <p className="mt-1.5 text-xs leading-relaxed">R$ {winner.prizeAmount.toFixed(2)} foi creditado à sua carteira deste ID. Você pode solicitar um saque via Pix usando o e-mail Mercado Pago cadastrado.</p>
+          </div>
+        )}
+        {winner.walletCreditStatus === 'pending' && (
+          <div className="my-4 rounded-2xl border border-sky-200 bg-sky-50 p-4 text-left text-sky-900">
+            <div className="flex items-center gap-2 font-bold text-sm"><Clock className="w-5 h-5 text-sky-600" /> Creditando prêmio na carteira</div>
+            <p className="mt-1.5 text-xs">A carteira está sendo atualizada pelo servidor. O saldo aparecerá assim que o registro durável for concluído.</p>
+          </div>
+        )}
+        {winner.walletCreditStatus === 'not_applicable' && (
+          <div className="my-4 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left text-slate-700 text-xs">
+            Esta vitória não está associada a uma conta de jogador habilitada para crédito de carteira.
+          </div>
+        )}
+
+        {/* Legacy Mercado Pago payout progress for winners recorded before wallet credits */}
+        {!winner.walletCreditStatus && <div className="mb-4 text-left bg-slate-50 rounded-2xl border border-slate-200 p-3.5 sm:p-4 space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-slate-200">
             <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
@@ -290,10 +308,10 @@ export const WinnerCelebrationModal: React.FC<WinnerCelebrationModalProps> = ({
               </p>
             </div>
           )}
-        </div>
+        </div>}
 
         {/* If user is the winner and needs to fix/register email */}
-        {isUser && (currentStatus === 'failed' || isEmailMissing) && onOpenPixKeyModal && (
+        {!winner.walletCreditStatus && isUser && (currentStatus === 'failed' || isEmailMissing) && onOpenPixKeyModal && (
           <button
             onClick={() => {
               onClose();

@@ -172,7 +172,7 @@ export const BuyCardsModal: React.FC<BuyCardsModalProps> = ({
         <div className="flex items-center gap-2 text-[11px] text-slate-600 mb-5 bg-slate-50 p-2.5 rounded-lg border border-slate-200">
           <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            Cada cartela custa apenas R$ 1,00. O prêmio é transferido automaticamente via Pix do vencedor.
+            Cada cartela custa R$ 1,00. O prêmio do vencedor é creditado no saldo e pode ser sacado via Pix.
           </span>
         </div>
 

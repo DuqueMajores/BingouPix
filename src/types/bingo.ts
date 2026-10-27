@@ -36,6 +36,7 @@ export interface WinnerInfo {
   pixKey: PixKey;
   mercadoPagoPaymentId: string;
   mercadoPagoStatus: 'approved' | 'in_process' | 'failed';
+  walletCreditStatus?: 'pending' | 'credited' | 'not_applicable';
   timestamp: number;
 }
 

@@ -24,6 +24,7 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
   const [isApproved, setIsApproved] = useState(false);
   const [statusNote, setStatusNote] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
   const isApprovedRef = useRef(false);
   isApprovedRef.current = isApproved;
@@ -35,12 +36,14 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
     setSelectedAmount(finalAmount);
     setLoading(true);
     setSuccessMessage('');
+    setErrorMessage('');
     setStatusNote('');
     setIsApproved(false);
     try {
       const data = await mercadoPagoService.createPixDeposit(finalAmount);
       setPixData(data);
     } catch (e) {
+      setErrorMessage(e instanceof Error ? e.message : 'Não foi possível gerar o Pix. Tente novamente.');
       console.error(e);
     } finally {
       setLoading(false);
@@ -55,11 +58,11 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
   };
 
   // Process confirmed payment and update balance
-  const confirmAndCreditDeposit = useCallback((amount: number) => {
+  const confirmAndCreditDeposit = useCallback(async (amount: number) => {
     if (isApprovedRef.current) return;
     setIsApproved(true);
     isApprovedRef.current = true;
-    bingoWebService.addDeposit(amount);
+    await bingoWebService.refreshBackendState();
     setSuccessMessage(`Pagamento de R$ ${amount.toFixed(2)} confirmado! Saldo atualizado.`);
     const user = bingoWebService.getUser();
     onDepositSuccess(user.balance);
@@ -85,7 +88,7 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
       );
 
       if (res.status === 'approved') {
-        confirmAndCreditDeposit(pixData.amount);
+        await confirmAndCreditDeposit(pixData.amount);
       } else if (isManual) {
         setStatusNote('Pagamento ainda pendente de confirmação bancária. O saldo só é atualizado quando houver a confirmação do pagamento.');
       }
@@ -220,6 +223,11 @@ export const PixDepositModal: React.FC<PixDepositModalProps> = ({
                 <span>Gerar Pix de R$ {selectedAmount.toFixed(2)}</span>
               )}
             </button>
+            {errorMessage && (
+              <div role="alert" className="mt-3 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+                {errorMessage}
+              </div>
+            )}
           </div>
         )}
 

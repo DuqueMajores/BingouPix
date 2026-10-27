@@ -41,7 +41,8 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
           </p>
           <button
             onClick={() => {
-              localStorage.clear();
+              localStorage.removeItem('bingoupix_user_v2');
+              localStorage.removeItem('bingoupix_game_v2');
               window.location.reload();
             }}
             className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 text-slate-950 font-bold text-xs shadow-lg shadow-emerald-500/20 active:scale-95 transition-all cursor-pointer"

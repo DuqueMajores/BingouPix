@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ShoppingBag,
   Plus,
@@ -17,6 +17,7 @@ import { BallQueue } from './components/BallQueue.tsx';
 import { BingoCardView } from './components/BingoCardView.tsx';
 import { BuyCardsModal } from './components/BuyCardsModal.tsx';
 import { PixDepositModal } from './components/PixDepositModal.tsx';
+import { PixWithdrawModal } from './components/PixWithdrawModal.tsx';
 import { PixKeyModal } from './components/PixKeyModal.tsx';
 import { WinnerCelebrationModal } from './components/WinnerCelebrationModal.tsx';
 import { PrizeHistoryModal } from './components/PrizeHistoryModal.tsx';
@@ -37,6 +38,7 @@ export default function App() {
   // Modals state
   const [isBuyModalOpen, setIsBuyModalOpen] = useState(false);
   const [isDepositModalOpen, setIsDepositModalOpen] = useState(false);
+  const [isWithdrawModalOpen, setIsWithdrawModalOpen] = useState(false);
   const [isPixKeyModalOpen, setIsPixKeyModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isInfoModalOpen, setIsInfoModalOpen] = useState(false);
@@ -90,8 +92,12 @@ export default function App() {
     return res.success;
   };
 
+  const handleWalletUpdated = useCallback(() => {
+    void bingoWebService.refreshBackendState();
+  }, []);
+
   const handleSavePixKey = async (pixKey: PixKey): Promise<boolean> => {
-    bingoWebService.registerPixKey(pixKey);
+    await bingoWebService.registerPixKey(pixKey);
     return true;
   };
 
@@ -112,6 +118,7 @@ export default function App() {
           isMobileFrame={isMobileFrame}
           onToggleMobileFrame={() => setIsMobileFrame(!isMobileFrame)}
           onOpenDeposit={() => setIsDepositModalOpen(true)}
+          onOpenWithdraw={() => setIsWithdrawModalOpen(true)}
           onOpenPixKey={() => setIsPixKeyModalOpen(true)}
           onOpenHistory={() => setIsHistoryModalOpen(true)}
           onOpenInfo={() => setIsInfoModalOpen(true)}
@@ -192,7 +199,7 @@ export default function App() {
                   Você ainda não comprou cartelas!
                 </h4>
                 <p className="text-xs text-slate-500 max-w-sm mt-1 mb-4 leading-relaxed">
-                  Cada cartela custa apenas R$ 1,00. O prêmio é transferido automaticamente via Pix do vencedor.
+                  Cada cartela custa apenas R$ 1,00. O prêmio entra no saldo do vencedor, que poderá solicitar um saque Pix.
                 </p>
                 <button
                   onClick={() => setIsBuyModalOpen(true)}
@@ -224,7 +231,7 @@ export default function App() {
                 Mercado Pago Integrado
               </span>
               <span className="text-slate-600">•</span>
-              <span>Cartelas R$ 1,00 • Prêmio Automático via Pix</span>
+              <span>Cartelas R$ 1,00 • Prêmio no saldo • Saque via Pix</span>
             </div>
           </div>
         </footer>
@@ -245,6 +252,14 @@ export default function App() {
           onDepositSuccess={(newBalance) => {
             setUser((prev) => ({ ...prev, balance: newBalance }));
           }}
+        />
+
+        <PixWithdrawModal
+          isOpen={isWithdrawModalOpen}
+          onClose={() => setIsWithdrawModalOpen(false)}
+          balance={user.balance}
+          pixKey={user.pixKey}
+          onWalletUpdated={handleWalletUpdated}
         />
 
         <PixKeyModal
